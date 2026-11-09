@@ -70,6 +70,26 @@ impl Default for UpdateSettings {
     }
 }
 
+/// How a Peripheral simulator tab lays out its advertiser, GATT server and log.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SimulatorLayout {
+    /// One at a time, picked in the tab's toolbar, as a device tab's views.
+    #[default]
+    Views,
+    /// All on one page, one under the other.
+    Page,
+    /// The advertiser and the GATT server on the left, the log on the right.
+    Columns,
+}
+
+/// Peripheral simulator tabs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SimulatorSettings {
+    pub layout: SimulatorLayout,
+}
+
 /// Everything in `settings.toml`. A value missing from the file takes its default.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,6 +99,7 @@ pub struct Settings {
     pub font_size: u8,
     pub startup: StartupSettings,
     pub updates: UpdateSettings,
+    pub simulator: SimulatorSettings,
 }
 
 impl Default for Settings {
@@ -88,6 +109,7 @@ impl Default for Settings {
             font_size: FONT_SIZE_DEFAULT,
             startup: StartupSettings::default(),
             updates: UpdateSettings::default(),
+            simulator: SimulatorSettings::default(),
         }
     }
 }
@@ -142,6 +164,9 @@ mod tests {
                 check: false,
                 skipped: "1.0.2".into(),
             },
+            simulator: SimulatorSettings {
+                layout: SimulatorLayout::Columns,
+            },
         };
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path), settings);
@@ -178,6 +203,18 @@ mod tests {
         let path = dir.file("settings.toml");
         fs::write(&path, "theme = \"light\"\nfrom_the_future = 1\n").unwrap();
         assert_eq!(Settings::load(&path).theme, Theme::Light);
+    }
+
+    #[test]
+    fn the_simulator_layout_is_a_word_and_starts_as_views() {
+        assert_eq!(Settings::default().simulator.layout, SimulatorLayout::Views);
+        let dir = TempDir::new("settings-simulator");
+        let path = dir.file("settings.toml");
+        fs::write(&path, "[simulator]\nlayout = \"page\"\n").unwrap();
+        assert_eq!(
+            Settings::load(&path).simulator.layout,
+            SimulatorLayout::Page
+        );
     }
 
     #[test]

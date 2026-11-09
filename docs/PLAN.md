@@ -55,6 +55,7 @@ the reason, what the OS does not let an app do.
 | MTU | read | read | read |
 | Connection parameters | read, and asked for as a preset | no | no |
 | Pairing and bonds from bleNIMA | yes; Windows asks for the passkey itself | pair in the OS's settings | pair in the OS's settings |
+| As a peripheral: advertising and a GATT server | yes, where the adapter can be a peripheral | not yet | not yet |
 | PHY, data length, own address, raw HCI | no: the OS decides | no | no |
 
 ### Not possible with the computer's own Bluetooth
@@ -166,8 +167,19 @@ bleNIMA as a device, to test a phone app or a central's firmware:
 - **Advertiser:** manufacturer data, service UUIDs and service data, with iBeacon and
   Eddystone presets. Windows advertises what WinRT lets an app put in an advert; macOS
   only a name and service UUIDs
-- **GATT server:** services and characteristics, values notified on a timer or by hand,
-  every read and write in the log. Windows through WinRT's GattServiceProvider
+- **GATT server:** services and characteristics by hand, picked by UUID or by name, or
+  from presets: Nordic UART, HM-10, Microchip Transparent UART, Battery, Heart Rate,
+  Device Information, Health Thermometer, Environmental Sensing, Current Time, Immediate
+  Alert, Cycling Speed and Cadence, Running Speed and Cadence, Blood Pressure, Pulse
+  Oximeter, Nordic LED Button (Blinky), Cycling Power, Fitness Machine (indoor bike),
+  Weight Scale, Proximity (Link Loss and Tx Power), Location and Navigation, Alert
+  Notification and Body Composition. Values notified or indicated on a timer, as made-up
+  live values for the presets, or by hand; the UART services can echo what is written.
+  Every read, write and subscribe in the log. Windows through WinRT's
+  GattServiceProvider, where the adapter can be a peripheral: bleNIMA asks Windows, and
+  greys the server out with the reason where it cannot
+- The tab shows its advertiser, GATT server and log one at a time, on one page, or in two
+  columns, as Settings says. The GATT server's services are kept with the tab
 
 ## Mesh over GATT proxy (Phase 8)
 
@@ -180,8 +192,9 @@ bleNIMA as a device, to test a phone app or a central's firmware:
 ## Saving and restoring
 
 As terNIMA: `settings.toml` (preferences) and `workspace.toml` (the tabs, each device,
-view, scanner filters and favourites, terminal settings, value formats, the window's place
-and size), saved on every change through a temporary file.
+view, scanner filters and favourites, terminal settings, value formats, each Peripheral
+simulator's GATT server, the window's place and size), saved on every change through a
+temporary file.
 
 | OS | Folder |
 |---|---|
@@ -200,7 +213,8 @@ bleNIMA/
   crates/blenima-core/    no UI: the radio, adverts, scanner table, GATT sessions,
                           names, settings and workspace. Tested on its own
     data/                 Nordic's Bluetooth numbers database, with its licence
-    examples/             scan, connect and bonds, for trying the radio from a terminal
+    examples/             scan, connect, bonds, advertise and serve, for trying the
+                          radio from a terminal
   src-tauri/              the Tauri app: connects blenima-core to the UI
   ui/                     Svelte 5 + TypeScript + xterm.js + uPlot
   docs/                   this plan
@@ -234,7 +248,8 @@ TypeScript modules with no imports, tested by Node as they are.
 
 - **Windows:** Windows 10 or later. bleNIMA reads GATT without the OS's cache, so new
   firmware shows its new table. Connecting to a device heard for the first time can take
-  up to 30 s
+  up to 30 s. A GATT server needs an adapter that can be a peripheral; Windows says
+  whether it can, and bleNIMA shows it
 - **macOS:** the app asks for Bluetooth access the first time. Devices are known by a
   made-up ID, not their address
 - **Linux:** needs `bluetoothd` running
@@ -244,13 +259,17 @@ TypeScript modules with no imports, tested by Node as they are.
 ## Testing
 
 - Unit tests in `blenima-core`: advert decoding, beacons, names, the device table and its
-  interval estimate, CSV, presentation formats, errors in words, settings and workspace
+  interval estimate, CSV, presentation formats, errors in words, settings and workspace,
+  and the GATT server's checks, long reads and writes, and clients' addresses
 - Node tests of the UI's modules: value formats, profile decoders, SMP (CBOR, headers,
-  reassembly, the MCUboot header, chunk sizes), the send-and-expect script, statistics
-- On real hardware: `cargo run -p blenima-core --example scan`, `connect <address>` and
-  `bonds` and `advertise`. Tried on Windows 11 with a Qualcomm QCA61x4: scanning with raw
-  adverts; connecting to a device and reading its GATT table, MTU 247 and connection
-  parameters; listing bonds; advertising an iBeacon, and Windows refusing Flags
+  reassembly, the MCUboot header, chunk sizes), the send-and-expect script, statistics,
+  and the GATT server's presets and live values
+- On real hardware: `cargo run -p blenima-core --example scan`, `connect <address>`,
+  `bonds`, `advertise` and `serve`. Tried on Windows 11 with a Qualcomm QCA61x4: scanning
+  with raw adverts; connecting to a device and reading its GATT table, MTU 247 and
+  connection parameters; listing bonds; advertising an iBeacon, and Windows refusing
+  Flags; serving Battery and the Nordic UART Service, advertised as connectable (Windows
+  pauses the advert for a moment as each service joins it)
 - Before each release: a Zephyr board with NUS, MCUmgr and a throughput service, on
   Windows, macOS and Linux
 
@@ -333,7 +352,9 @@ TypeScript modules with no imports, tested by Node as they are.
 - [x] Advertiser on Windows: iBeacon, Eddystone URL, manufacturer data, or AD structures
   by hand, with the bytes on the air and what Windows refused
 - [ ] Advertising on macOS and Linux
-- [ ] GATT server with notify on a timer
+- [x] GATT server on Windows: services by hand or from presets, values notified on a
+  timer, live or by hand, every read, write and subscribe in the log
+- [ ] The GATT server tried with a phone: nRF Connect reading, writing and subscribing
 
 ### Phase 8: Mesh over GATT proxy
 

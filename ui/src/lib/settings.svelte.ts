@@ -20,6 +20,14 @@ export type UpdateSettings = {
   skipped: string;
 };
 
+/** How a Peripheral simulator tab lays out its advertiser, GATT server and log. */
+export type SimulatorLayout = "views" | "page" | "columns";
+
+/** Peripheral simulator tabs. */
+export type SimulatorSettings = {
+  layout: SimulatorLayout;
+};
+
 /** The same fields as `Settings` in blenima-core's settings.rs. */
 export type Settings = {
   theme: ThemeChoice;
@@ -27,6 +35,7 @@ export type Settings = {
   font_size: number;
   startup: StartupSettings;
   updates: UpdateSettings;
+  simulator: SimulatorSettings;
 };
 
 /** Text size limits, the same as in settings.rs. */
@@ -40,6 +49,7 @@ export const settings: Settings = $state({
   font_size: FONT_SIZE_DEFAULT,
   startup: { restore_tabs: true, reconnect: true, restore_window: true },
   updates: { check: true, skipped: "" },
+  simulator: { layout: "views" },
 });
 
 /** Reads the settings from settings.toml, through the Rust side. */

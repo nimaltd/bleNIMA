@@ -150,6 +150,23 @@ pub fn any_uuid_name(uuid: &Uuid) -> Option<&'static str> {
         .or_else(|| uuid_name(uuid, Kind::Descriptor))
 }
 
+/// Every service, characteristic or descriptor the tables name, by name, so
+/// one can be picked by its name: the UUID in full, and the name.
+pub fn all_names(kind: Kind) -> Vec<(String, &'static str)> {
+    let tables = tables();
+    let table = match kind {
+        Kind::Service => &tables.services,
+        Kind::Characteristic => &tables.characteristics,
+        Kind::Descriptor => &tables.descriptors,
+    };
+    let mut list: Vec<_> = table
+        .iter()
+        .map(|(uuid, name)| (uuid.hyphenated().to_string(), name.as_str()))
+        .collect();
+    list.sort_by(|a, b| a.1.cmp(b.1).then_with(|| a.0.cmp(&b.0)));
+    list
+}
+
 /// The company with this Bluetooth SIG company ID, as in manufacturer data.
 pub fn company_name(code: u16) -> Option<&'static str> {
     tables().companies.get(&code).map(String::as_str)
@@ -212,6 +229,18 @@ mod tests {
         assert_eq!(company_name(0x004C), Some("Apple, Inc."));
         let nus = parse_uuid("6E400001-B5A3-F393-E0A9-E50E24DCCA9E").unwrap();
         assert!(uuid_name(&nus, Kind::Service).is_some());
+    }
+
+    #[test]
+    fn every_name_can_be_listed_by_name() {
+        let services = all_names(Kind::Service);
+        assert!(services.len() > 100);
+        assert!(services.windows(2).all(|pair| pair[0].1 <= pair[1].1));
+        assert!(services.contains(&(
+            "0000180f-0000-1000-8000-00805f9b34fb".to_string(),
+            "Battery Service"
+        )));
+        assert!(all_names(Kind::Characteristic).len() > services.len());
     }
 
     #[test]

@@ -9,6 +9,7 @@
     type ThemeChoice,
     type UpdateSettings,
   } from "./settings.svelte";
+  import type { SimulatorSettings } from "./settings.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -17,6 +18,7 @@
   let fontSize = $state(settings.font_size);
   let startup: StartupSettings = $state({ ...settings.startup });
   let updates: UpdateSettings = $state({ ...settings.updates });
+  let simulator: SimulatorSettings = $state({ ...settings.simulator });
   let error = $state("");
 
   function submit() {
@@ -29,6 +31,7 @@
       font_size: fontSize,
       startup: { ...startup },
       updates: { ...updates },
+      simulator: { ...simulator },
     });
     onclose();
   }
@@ -66,6 +69,22 @@
       <input type="checkbox" bind:checked={startup.restore_window} /> Open the window where it was, at its size
     </label>
   </div>
+
+  <h2 class="dlg-section">Peripheral simulator</h2>
+  <div class="dlg-grid">
+    <label class="dlg-label">
+      Layout
+      <select class="field" bind:value={simulator.layout}>
+        <option value="views">One at a time, as views</option>
+        <option value="page">All on one page</option>
+        <option value="columns">Two columns, log right</option>
+      </select>
+    </label>
+  </div>
+  <p class="dlg-hint">
+    How a Peripheral simulator tab shows its advertiser, GATT server and log. A GATT server that ran when bleNIMA closed
+    starts again with "Connect the tabs that were connected".
+  </p>
 
   <h2 class="dlg-section">Updates</h2>
   <div class="dlg-checks">

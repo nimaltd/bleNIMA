@@ -1,4 +1,5 @@
-//! The commands the UI calls for Bluetooth: the radio, scanner tabs and device tabs.
+//! The commands the UI calls for Bluetooth: the radio, scanner tabs, device
+//! tabs, and Peripheral simulator tabs' adverts and GATT servers.
 //!
 //! The work is in `blenima-core`; this file keeps each tab's session and sends
 //! what happens to its tab through a channel.
@@ -10,8 +11,11 @@ use std::time::{Duration, Instant};
 
 use blenima_core::advert::AdStructure;
 use blenima_core::device::{Command, DeviceEvent, DeviceSession};
-use blenima_core::radio::{Advertising, Radio, RadioInfo};
+use blenima_core::names::{self, Kind};
+use blenima_core::radio::{Advertising, Radio, RadioInfo, Serving};
 use blenima_core::scanner::{Changes, DeviceDetails, DeviceTable};
+use blenima_core::server::{Place, ServerEvent, Service};
+use serde::Serialize;
 use tauri::State;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::Channel;
@@ -34,6 +38,7 @@ pub struct Bluetooth {
     scanners: Mutex<HashMap<u32, Scanner>>,
     devices: Mutex<HashMap<u32, DeviceSession>>,
     adverts: Mutex<HashMap<u32, Advertising>>,
+    servers: Mutex<HashMap<u32, Arc<Serving>>>,
     next: AtomicU32,
 }
 
@@ -286,6 +291,76 @@ pub fn advertise_status(id: u32, bluetooth: State<'_, Bluetooth>) -> String {
 #[tauri::command]
 pub fn advertise_stop(id: u32, bluetooth: State<'_, Bluetooth>) {
     lock(&bluetooth.adverts).remove(&id);
+}
+
+/// Starts a GATT server with these services, advertised as connectable.
+/// What clients do goes to `events`. Returns its id, to change values and stop it.
+#[tauri::command]
+pub async fn server_start(
+    services: Vec<Service>,
+    events: Channel<ServerEvent>,
+    bluetooth: State<'_, Bluetooth>,
+) -> Result<u32, String> {
+    let (sink, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let serving = tauri::async_runtime::spawn_blocking(move || Serving::start(&services, sink))
+        .await
+        .map_err(|error| error.to_string())??;
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = receiver.recv().await {
+            if events.send(event).is_err() {
+                break;
+            }
+        }
+    });
+    let id = bluetooth.id();
+    lock(&bluetooth.servers).insert(id, Arc::new(serving));
+    Ok(id)
+}
+
+/// Sets a characteristic's value on a server; with `notify`, sends it to the
+/// clients subscribed too. Returns how many were subscribed.
+#[tauri::command]
+pub async fn server_value(
+    id: u32,
+    place: Place,
+    data: Vec<u8>,
+    notify: bool,
+    bluetooth: State<'_, Bluetooth>,
+) -> Result<usize, String> {
+    let serving = lock(&bluetooth.servers)
+        .get(&id)
+        .cloned()
+        .ok_or("The GATT server is not running")?;
+    tauri::async_runtime::spawn_blocking(move || serving.set(place, &data, notify))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// Stops a GATT server: its services and their advert are gone.
+#[tauri::command]
+pub fn server_stop(id: u32, bluetooth: State<'_, Bluetooth>) {
+    lock(&bluetooth.servers).remove(&id);
+}
+
+/// A standard UUID and its name, to pick one by its name.
+#[derive(Serialize)]
+pub struct NamedUuid {
+    uuid: String,
+    name: &'static str,
+}
+
+/// Every service, or every characteristic, the names database knows, by name.
+#[tauri::command]
+pub fn standard_names(characteristics: bool) -> Vec<NamedUuid> {
+    let kind = if characteristics {
+        Kind::Characteristic
+    } else {
+        Kind::Service
+    };
+    names::all_names(kind)
+        .into_iter()
+        .map(|(uuid, name)| NamedUuid { uuid, name })
+        .collect()
 }
 
 /// Saves text to a file the user picked, such as a log.

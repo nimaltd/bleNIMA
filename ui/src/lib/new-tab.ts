@@ -50,7 +50,7 @@ export const NEW_TABS: NewTab[] = [
   {
     kind: "simulator",
     label: "Peripheral simulator",
-    detail: "bleNIMA as a device: an advertiser now, a GATT server next",
+    detail: "bleNIMA as a device: an advertiser and a GATT server",
     phase: 7,
   },
   {

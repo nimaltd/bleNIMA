@@ -5,6 +5,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- A GATT server in Peripheral simulator tabs, on Windows: bleNIMA as a device for
+  testing a phone app or a central's firmware. Services and characteristics by hand,
+  picked by UUID or by name, or from 22 presets, among them the Nordic UART Service,
+  HM-10, Battery, Heart Rate, Device Information, Health Thermometer, Environmental
+  Sensing, cycling and running sensors, Blood Pressure, Pulse Oximeter, Nordic's LED
+  Button and Weight Scale. Values are notified or indicated on a timer, as made-up live
+  values for the presets, or by hand, and the UART services can echo what is written.
+  Every read, write, subscribe and notification is in the tab's log. bleNIMA asks
+  Windows whether the adapter can be a peripheral, and greys the server out with the
+  reason where it cannot, and on macOS and Linux. The services are kept with the tab,
+  and a server that ran starts again with "Connect the tabs that were connected".
+- A Peripheral simulator section in Settings: the tab shows its advertiser, GATT server
+  and log one at a time, on one page, or in two columns.
+- The `serve` example, to try the GATT server from a terminal.
+
 ## [0.1.0] - 2026-11-09
 
 ### Added

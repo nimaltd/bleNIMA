@@ -7,7 +7,7 @@
   import DeviceView from "./lib/DeviceView.svelte";
   import ScannerView from "./lib/ScannerView.svelte";
   import BondsDialog from "./lib/BondsDialog.svelte";
-  import AdvertiserView from "./lib/AdvertiserView.svelte";
+  import SimulatorView from "./lib/SimulatorView.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import MenuBar from "./lib/MenuBar.svelte";
   import SettingsDialog from "./lib/SettingsDialog.svelte";
@@ -145,8 +145,8 @@
             <ScannerView {tab} />
           {:else if tab.device}
             <DeviceView {tab} active={i === view.active} />
-          {:else if tab.kind === "simulator"}
-            <AdvertiserView />
+          {:else if tab.server}
+            <SimulatorView {tab} />
           {:else}
             <Coming {tab} onscan={() => newTab("scanner")} />
           {/if}

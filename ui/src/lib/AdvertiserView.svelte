@@ -143,9 +143,6 @@
     </p>
   {/if}
   {#if problem}<p class="bad">{problem}</p>{/if}
-
-  <h3>Next</h3>
-  <p class="muted">A GATT server, with services and characteristics notified on a timer, comes next in Phase 7.</p>
 </div>
 
 <style>

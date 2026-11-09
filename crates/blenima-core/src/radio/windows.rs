@@ -3,8 +3,10 @@
 //! Hearing adverts through WinRT's advertisement watcher, which gives every
 //! advert as it came: its AD structures as sent, its PDU kind, its address type
 //! and whether it is a scan response; btleplug's own watcher keeps only some of
-//! it. And pairing, unpairing and the list of bonds.
+//! it. Pairing, unpairing and the list of bonds. And bleNIMA as a peripheral:
+//! advertising, and a GATT server through WinRT's GattServiceProvider.
 
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -14,18 +16,31 @@ use windows::Devices::Bluetooth::Advertisement::{
     BluetoothLEAdvertisementType, BluetoothLEAdvertisementWatcher, BluetoothLEManufacturerData,
     BluetoothLEScanningMode,
 };
-use windows::Devices::Bluetooth::{BluetoothAddressType, BluetoothLEDevice};
+use windows::Devices::Bluetooth::GenericAttributeProfile::{
+    GattCharacteristicProperties, GattCommunicationStatus, GattLocalCharacteristic,
+    GattLocalCharacteristicParameters, GattProtectionLevel, GattReadRequestedEventArgs,
+    GattServiceProvider, GattServiceProviderAdvertisementStatus,
+    GattServiceProviderAdvertisementStatusChangedEventArgs,
+    GattServiceProviderAdvertisingParameters, GattSession, GattWriteOption,
+    GattWriteRequestedEventArgs,
+};
+use windows::Devices::Bluetooth::{
+    BluetoothAdapter, BluetoothAddressType, BluetoothError, BluetoothLEDevice,
+};
 use windows::Devices::Enumeration::{
     DeviceInformation, DevicePairingProtectionLevel, DevicePairingResultStatus,
     DeviceUnpairingResultStatus,
 };
 use windows::Foundation::TypedEventHandler;
 use windows::Storage::Streams::{DataReader, DataWriter, IBuffer};
-use windows::core::Ref;
+use windows::core::{GUID, HSTRING, IInspectable, Ref};
 
 use crate::advert::{self, AdStructure, ad};
+use crate::gatt;
+use crate::names::Kind;
 use crate::radio::Bond;
 use crate::scanner::{AddressKind, AdvKind, Advert};
+use crate::server::{self, Place, ServerEvent, Service, VALUE_MAX, Values, property};
 
 /// The 48 bits of "C3:1A:4B:00:12:9F", as Windows takes an address.
 pub fn address_value(text: &str) -> Option<u64> {
@@ -404,6 +419,580 @@ impl Publisher {
 impl Drop for Publisher {
     fn drop(&mut self) {
         let _ = self.publisher.Stop();
+    }
+}
+
+/// Why this computer's Bluetooth adapter cannot be a GATT server, in words;
+/// nothing when it can. Blocks while Windows answers.
+pub fn peripheral_problem() -> Option<String> {
+    let adapter = match BluetoothAdapter::GetDefaultAsync().and_then(|operation| operation.join()) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            return Some(format!(
+                "Windows found no Bluetooth adapter to be a peripheral with: {}",
+                winrt(error)
+            ));
+        }
+    };
+    match adapter.IsPeripheralRoleSupported() {
+        Ok(true) => None,
+        Ok(false) => Some(
+            "This Bluetooth adapter cannot be a peripheral: Windows says its chip or driver does not support the peripheral role, so it cannot be a GATT server"
+                .into(),
+        ),
+        Err(error) => Some(format!(
+            "Windows could not tell whether this adapter can be a peripheral: {}",
+            winrt(error)
+        )),
+    }
+}
+
+/// What a Bluetooth error from Windows means, in words.
+fn bluetooth_error(error: BluetoothError) -> String {
+    match error {
+        BluetoothError::RadioNotAvailable => "the Bluetooth radio is off or not there".into(),
+        BluetoothError::ResourceInUse => {
+            "the radio is busy: another app may be serving the same service".into()
+        }
+        BluetoothError::DisabledByPolicy => {
+            "a policy on this computer does not allow it".into()
+        }
+        BluetoothError::NotSupported => {
+            "this adapter or Windows does not support it; Windows also keeps some services for itself"
+                .into()
+        }
+        BluetoothError::DisabledByUser => "Bluetooth is turned off".into(),
+        BluetoothError::ConsentRequired => "Windows wants the user's consent first".into(),
+        BluetoothError::TransportNotSupported => {
+            "the adapter does not support Bluetooth LE".into()
+        }
+        other => format!("Windows error {}", other.0),
+    }
+}
+
+fn guid(uuid: &uuid::Uuid) -> GUID {
+    GUID::from_u128(uuid.as_u128())
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A client's address, from its GATT session with us.
+fn client(session: windows::core::Result<GattSession>) -> String {
+    session
+        .and_then(|session| session.DeviceId())
+        .and_then(|id| id.Id())
+        .map(|id| server::client_address(&id.to_string()))
+        .unwrap_or_else(|_| "A client".into())
+}
+
+/// The clients subscribed to a characteristic's notifications or indications.
+fn subscribers(characteristic: &GattLocalCharacteristic) -> Vec<String> {
+    let mut list = Vec::new();
+    if let Ok(clients) = characteristic.SubscribedClients() {
+        for subscribed in &clients {
+            list.push(client(subscribed.Session()));
+        }
+    }
+    list
+}
+
+fn failed(place: Place, action: &str, problem: String) -> ServerEvent {
+    ServerEvent::Failed {
+        place: Some(place),
+        action: action.into(),
+        problem,
+    }
+}
+
+/// The values every handler reads and changes.
+type Shared = Arc<Mutex<Values>>;
+
+/// Answers a client's read with the value as it is now, from the offset it asked.
+fn answer_read(
+    args: &GattReadRequestedEventArgs,
+    place: Place,
+    values: &Shared,
+    sink: &UnboundedSender<ServerEvent>,
+) {
+    let deferral = args.GetDeferral().ok();
+    let client = client(args.Session());
+    let event = match args
+        .GetRequestAsync()
+        .and_then(|operation| operation.join())
+    {
+        Ok(request) => {
+            let offset = request.Offset().unwrap_or(0);
+            let value = lock(values).get(place).unwrap_or_default().to_vec();
+            match server::read_at(&value, offset) {
+                Ok(data) => match buffer(&data)
+                    .and_then(|data| request.RespondWithValue(&data).map_err(winrt))
+                {
+                    Ok(()) => ServerEvent::Read {
+                        place,
+                        client,
+                        offset,
+                        data,
+                    },
+                    Err(problem) => failed(place, "read", problem),
+                },
+                Err(code) => {
+                    let _ = request.RespondWithProtocolError(code);
+                    failed(
+                        place,
+                        "read",
+                        format!(
+                            "{client} read at offset {offset}, past the end of the {}-byte value: answered with ATT error 0x{code:02X}, {}",
+                            value.len(),
+                            gatt::att_error(code)
+                        ),
+                    )
+                }
+            }
+        }
+        Err(error) => failed(
+            place,
+            "read",
+            format!(
+                "Windows did not hand over {client}'s read: {}",
+                winrt(error)
+            ),
+        ),
+    };
+    let _ = sink.send(event);
+    if let Some(deferral) = deferral {
+        let _ = deferral.Complete();
+    }
+}
+
+/// A characteristic a write is echoed to, and where it is.
+type Echo = Option<(GattLocalCharacteristic, Place)>;
+
+/// Takes a client's write into the value, answers it when it wants an
+/// answer, and echoes what was written where the service says.
+fn answer_write(
+    args: &GattWriteRequestedEventArgs,
+    place: Place,
+    values: &Shared,
+    sink: &UnboundedSender<ServerEvent>,
+    echo: &Echo,
+) {
+    let deferral = args.GetDeferral().ok();
+    let client = client(args.Session());
+    let mut echoed = None;
+    match args
+        .GetRequestAsync()
+        .and_then(|operation| operation.join())
+    {
+        Ok(request) => {
+            let with_response = request
+                .Option()
+                .map(|option| option == GattWriteOption::WriteWithResponse)
+                .unwrap_or(true);
+            let offset = request.Offset().unwrap_or(0);
+            let data = request
+                .Value()
+                .map(|value| bytes(&value))
+                .unwrap_or_default();
+            let written = {
+                let mut values = lock(values);
+                let old = values.get(place).unwrap_or_default().to_vec();
+                server::write_at(&old, offset, &data).inspect(|value| {
+                    values.set(place, value.clone());
+                })
+            };
+            match written {
+                Ok(value) => {
+                    if with_response {
+                        let _ = request.Respond();
+                    }
+                    echoed = Some(data.clone());
+                    let _ = sink.send(ServerEvent::Written {
+                        place,
+                        client,
+                        with_response,
+                        offset,
+                        data,
+                        value,
+                    });
+                }
+                Err(code) => {
+                    if with_response {
+                        let _ = request.RespondWithProtocolError(code);
+                    }
+                    let _ = sink.send(failed(
+                        place,
+                        "write",
+                        format!(
+                            "{client} wrote {} bytes at offset {offset}: refused with ATT error 0x{code:02X}, {}",
+                            data.len(),
+                            gatt::att_error(code)
+                        ),
+                    ));
+                }
+            }
+        }
+        Err(error) => {
+            let _ = sink.send(failed(
+                place,
+                "write",
+                format!(
+                    "Windows did not hand over {client}'s write: {}",
+                    winrt(error)
+                ),
+            ));
+        }
+    }
+    if let Some(deferral) = deferral {
+        let _ = deferral.Complete();
+    }
+    // After the write is answered, so the client is not kept waiting for it.
+    if let (Some(data), Some((target, target_place))) = (echoed, echo)
+        && let Err(problem) = notify(target, *target_place, &data, values, sink, true)
+    {
+        let _ = sink.send(failed(*target_place, "echo", problem));
+    }
+}
+
+/// Sets a value and notifies or indicates it to every client subscribed, as
+/// each one asked. Returns how many were subscribed; what reached them goes
+/// to `sink`.
+fn notify(
+    characteristic: &GattLocalCharacteristic,
+    place: Place,
+    data: &[u8],
+    values: &Shared,
+    sink: &UnboundedSender<ServerEvent>,
+    echo: bool,
+) -> Result<usize, String> {
+    lock(values).set(place, data.to_vec());
+    let subscribed = characteristic
+        .SubscribedClients()
+        .and_then(|clients| clients.Size())
+        .unwrap_or(0) as usize;
+    if subscribed == 0 {
+        return Ok(0);
+    }
+    let results = characteristic
+        .NotifyValueAsync(&buffer(data)?)
+        .and_then(|operation| operation.join())
+        .map_err(|error| format!("Windows could not notify: {}", winrt(error)))?;
+    let (mut sent, mut missed) = (Vec::new(), Vec::new());
+    for result in &results {
+        let who = client(result.SubscribedClient().and_then(|c| c.Session()));
+        match result.Status() {
+            Ok(GattCommunicationStatus::Success) => sent.push(who),
+            Ok(GattCommunicationStatus::Unreachable) => {
+                missed.push(format!("{who}: it did not answer"));
+            }
+            Ok(GattCommunicationStatus::ProtocolError) => {
+                let code = result
+                    .ProtocolError()
+                    .and_then(|code| code.Value())
+                    .unwrap_or(0);
+                missed.push(format!(
+                    "{who}: ATT error 0x{code:02X}, {}",
+                    gatt::att_error(code)
+                ));
+            }
+            Ok(GattCommunicationStatus::AccessDenied) => {
+                missed.push(format!("{who}: access denied"));
+            }
+            Ok(other) => missed.push(format!("{who}: Windows status {}", other.0)),
+            Err(error) => missed.push(format!("{who}: {}", winrt(error))),
+        }
+    }
+    let _ = sink.send(ServerEvent::Notified {
+        place,
+        data: data.to_vec(),
+        sent,
+        failed: missed,
+        echo,
+    });
+    Ok(subscribed)
+}
+
+/// Where a service's advert is, in words, and whether it is on the air.
+fn advertising_text(
+    args: &GattServiceProviderAdvertisementStatusChangedEventArgs,
+) -> (bool, String) {
+    match args.Status() {
+        Ok(GattServiceProviderAdvertisementStatus::Started) => (true, "Advertising".into()),
+        Ok(GattServiceProviderAdvertisementStatus::StartedWithoutAllAdvertisementData) => (
+            true,
+            "Advertising, without all of its data: the advert is full".into(),
+        ),
+        Ok(GattServiceProviderAdvertisementStatus::Created) => {
+            (false, "Ready, not advertising yet".into())
+        }
+        Ok(GattServiceProviderAdvertisementStatus::Stopped) => (false, "Not advertising".into()),
+        // With no error, Windows is making the advert again, as when another
+        // service joins it, and starts it again by itself.
+        Ok(GattServiceProviderAdvertisementStatus::Aborted) => match args.Error() {
+            Ok(BluetoothError::Success) => {
+                (false, "Paused while Windows makes the advert again".into())
+            }
+            Ok(error) => (
+                false,
+                format!("Windows stopped advertising it: {}", bluetooth_error(error)),
+            ),
+            Err(error) => (
+                false,
+                format!("Windows stopped advertising it: {}", winrt(error)),
+            ),
+        },
+        Ok(other) => (false, format!("Windows status {}", other.0)),
+        Err(error) => (false, winrt(error)),
+    }
+}
+
+/// The event handlers on a characteristic, to take them away again.
+enum Handler {
+    Read(i64),
+    Write(i64),
+    Subscribed(i64),
+}
+
+/// bleNIMA as a GATT server: one GattServiceProvider for each service, each
+/// advertised as connectable. Dropping it stops them all.
+pub struct GattServer {
+    providers: Vec<(GattServiceProvider, i64)>,
+    characteristics: Vec<Vec<(GattLocalCharacteristic, Vec<Handler>)>>,
+    values: Shared,
+    sink: UnboundedSender<ServerEvent>,
+}
+
+impl GattServer {
+    /// Makes the services, answers their reads and writes, and advertises
+    /// them. What clients do goes to `sink`. Blocks while Windows makes them.
+    pub fn start(services: &[Service], sink: UnboundedSender<ServerEvent>) -> Result<Self, String> {
+        server::check(services)?;
+        if let Some(problem) = peripheral_problem() {
+            return Err(problem);
+        }
+        // On an error the server is dropped, and what was made so far with it.
+        let mut made = Self {
+            providers: Vec::new(),
+            characteristics: Vec::new(),
+            values: Arc::new(Mutex::new(Values::new(services))),
+            sink,
+        };
+        for (at, service) in services.iter().enumerate() {
+            made.add(at, service)?;
+        }
+        Ok(made)
+    }
+
+    fn add(&mut self, at: usize, service: &Service) -> Result<(), String> {
+        let service_name = server::name(&service.uuid, Kind::Service);
+        let refused = |why: String| format!("Windows could not serve {service_name}: {why}");
+        let result = GattServiceProvider::CreateAsync(guid(&service.uuid))
+            .and_then(|operation| operation.join())
+            .map_err(|error| refused(winrt(error)))?;
+        match result.Error() {
+            Ok(BluetoothError::Success) => {}
+            Ok(error) => return Err(refused(bluetooth_error(error))),
+            Err(error) => return Err(refused(winrt(error))),
+        }
+        let provider = result
+            .ServiceProvider()
+            .map_err(|error| refused(winrt(error)))?;
+        let local = provider.Service().map_err(|error| refused(winrt(error)))?;
+
+        let mut characteristics = Vec::new();
+        for characteristic in &service.characteristics {
+            let what = format!(
+                "{} in {service_name}",
+                server::name(&characteristic.uuid, Kind::Characteristic)
+            );
+            let refused = |error: windows::core::Error| {
+                format!("Windows could not make {what}: {}", winrt(error))
+            };
+            let parameters = GattLocalCharacteristicParameters::new().map_err(refused)?;
+            parameters
+                .SetCharacteristicProperties(GattCharacteristicProperties(u32::from(
+                    characteristic.properties & property::ALL,
+                )))
+                .map_err(refused)?;
+            parameters
+                .SetReadProtectionLevel(GattProtectionLevel::Plain)
+                .map_err(refused)?;
+            parameters
+                .SetWriteProtectionLevel(GattProtectionLevel::Plain)
+                .map_err(refused)?;
+            if !characteristic.description.is_empty() {
+                parameters
+                    .SetUserDescription(&HSTRING::from(characteristic.description.as_str()))
+                    .map_err(refused)?;
+            }
+            let result = local
+                .CreateCharacteristicAsync(guid(&characteristic.uuid), &parameters)
+                .and_then(|operation| operation.join())
+                .map_err(refused)?;
+            match result.Error() {
+                Ok(BluetoothError::Success) => {}
+                Ok(error) => {
+                    return Err(format!(
+                        "Windows could not make {what}: {}",
+                        bluetooth_error(error)
+                    ));
+                }
+                Err(error) => return Err(refused(error)),
+            }
+            characteristics.push(result.Characteristic().map_err(refused)?);
+        }
+
+        // The handlers, once every characteristic is made, so a write can echo
+        // to one made after it.
+        let mut handled = Vec::new();
+        for (index, (setup, characteristic)) in service
+            .characteristics
+            .iter()
+            .zip(&characteristics)
+            .enumerate()
+        {
+            let place = Place {
+                service: at,
+                characteristic: index,
+            };
+            let mut handlers = Vec::new();
+            let problem = |error: windows::core::Error| {
+                format!("Windows refused a handler: {}", winrt(error))
+            };
+            if setup.properties & property::READ != 0 {
+                let (values, sink) = (self.values.clone(), self.sink.clone());
+                let token = characteristic
+                    .ReadRequested(&TypedEventHandler::new(
+                        move |_, args: Ref<GattReadRequestedEventArgs>| {
+                            if let Ok(args) = args.ok() {
+                                answer_read(args, place, &values, &sink);
+                            }
+                            Ok(())
+                        },
+                    ))
+                    .map_err(problem)?;
+                handlers.push(Handler::Read(token));
+            }
+            if setup.properties & (property::WRITE | property::WRITE_WITHOUT_RESPONSE) != 0 {
+                let (values, sink) = (self.values.clone(), self.sink.clone());
+                let echo: Echo = setup.echo.and_then(|target| {
+                    let local = characteristics.get(target)?.clone();
+                    Some((
+                        local,
+                        Place {
+                            service: at,
+                            characteristic: target,
+                        },
+                    ))
+                });
+                let token = characteristic
+                    .WriteRequested(&TypedEventHandler::new(
+                        move |_, args: Ref<GattWriteRequestedEventArgs>| {
+                            if let Ok(args) = args.ok() {
+                                answer_write(args, place, &values, &sink, &echo);
+                            }
+                            Ok(())
+                        },
+                    ))
+                    .map_err(problem)?;
+                handlers.push(Handler::Write(token));
+            }
+            if setup.properties & (property::NOTIFY | property::INDICATE) != 0 {
+                let sink = self.sink.clone();
+                let token = characteristic
+                    .SubscribedClientsChanged(&TypedEventHandler::new(
+                        move |sender: Ref<GattLocalCharacteristic>, _: Ref<IInspectable>| {
+                            if let Ok(sender) = sender.ok() {
+                                let _ = sink.send(ServerEvent::Subscribers {
+                                    place,
+                                    clients: subscribers(sender),
+                                });
+                            }
+                            Ok(())
+                        },
+                    ))
+                    .map_err(problem)?;
+                handlers.push(Handler::Subscribed(token));
+            }
+            handled.push((characteristic.clone(), handlers));
+        }
+        self.characteristics.push(handled);
+
+        let sink = self.sink.clone();
+        let token = provider
+            .AdvertisementStatusChanged(&TypedEventHandler::new(
+                move |_, args: Ref<GattServiceProviderAdvertisementStatusChangedEventArgs>| {
+                    if let Ok(args) = args.ok() {
+                        let (on, text) = advertising_text(args);
+                        let _ = sink.send(ServerEvent::Advertising {
+                            service: at,
+                            on,
+                            text,
+                        });
+                    }
+                    Ok(())
+                },
+            ))
+            .map_err(|error| refused(winrt(error)))?;
+        self.providers.push((provider.clone(), token));
+        let parameters = GattServiceProviderAdvertisingParameters::new()
+            .map_err(|error| refused(winrt(error)))?;
+        parameters
+            .SetIsConnectable(true)
+            .and_then(|()| parameters.SetIsDiscoverable(true))
+            .map_err(|error| refused(winrt(error)))?;
+        provider
+            .StartAdvertisingWithParameters(&parameters)
+            .map_err(|error| {
+                format!(
+                    "Windows could not advertise {service_name}: {}",
+                    winrt(error)
+                )
+            })
+    }
+
+    /// Sets a characteristic's value, for reads; with `notify`, sends it too,
+    /// to every client subscribed. Returns how many were subscribed. Blocks
+    /// while it notifies.
+    pub fn set(&self, place: Place, data: &[u8], notify_it: bool) -> Result<usize, String> {
+        if data.len() > VALUE_MAX {
+            return Err(format!(
+                "A value is {VALUE_MAX} bytes at most; this one has {}",
+                data.len()
+            ));
+        }
+        let (characteristic, _) = self
+            .characteristics
+            .get(place.service)
+            .and_then(|service| service.get(place.characteristic))
+            .ok_or("There is no such characteristic on the server")?;
+        if notify_it {
+            notify(characteristic, place, data, &self.values, &self.sink, false)
+        } else {
+            lock(&self.values).set(place, data.to_vec());
+            Ok(0)
+        }
+    }
+}
+
+impl Drop for GattServer {
+    fn drop(&mut self) {
+        for (provider, token) in &self.providers {
+            let _ = provider.RemoveAdvertisementStatusChanged(*token);
+            let _ = provider.StopAdvertising();
+        }
+        for (characteristic, handlers) in self.characteristics.iter().flatten() {
+            for handler in handlers {
+                let _ = match handler {
+                    Handler::Read(token) => characteristic.RemoveReadRequested(*token),
+                    Handler::Write(token) => characteristic.RemoveWriteRequested(*token),
+                    Handler::Subscribed(token) => {
+                        characteristic.RemoveSubscribedClientsChanged(*token)
+                    }
+                };
+            }
+        }
     }
 }
 

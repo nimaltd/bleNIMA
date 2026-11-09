@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { DeviceState } from "./device.svelte";
+  import type { LogLine } from "./device.svelte";
 
-  let { device }: { device: DeviceState } = $props();
+  /** Whose log it is: a device tab's, or a GATT server's. */
+  let { source }: { source: { log: LogLine[]; clearLog(): void } } = $props();
 
   /** The lines drawn at most: the newest. */
   const SHOWN = 1500;
@@ -13,8 +14,8 @@
   const lines = $derived.by(() => {
     const text = filter.trim().toLowerCase();
     const matching = text
-      ? device.log.filter((line) => `${line.name} ${line.text} ${line.hex} ${line.kind}`.toLowerCase().includes(text))
-      : device.log;
+      ? source.log.filter((line) => `${line.name} ${line.text} ${line.hex} ${line.kind}`.toLowerCase().includes(text))
+      : source.log;
     return matching.slice(-SHOWN);
   });
 
@@ -32,9 +33,9 @@
 <div class="log">
   <div class="bar">
     <input class="field small" placeholder="Filter the log" bind:value={filter} spellcheck="false" />
-    <span class="muted">{device.log.length} lines</span>
+    <span class="muted">{source.log.length} lines</span>
     <span class="spacer"></span>
-    <button class="btn small" onclick={() => device.clearLog()}>Clear</button>
+    <button class="btn small" onclick={() => source.clearLog()}>Clear</button>
   </div>
   <div class="lines" bind:this={list} {onscroll}>
     {#each lines as line (line.n)}

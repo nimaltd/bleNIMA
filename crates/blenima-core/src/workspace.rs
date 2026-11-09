@@ -94,13 +94,55 @@ impl Default for ScanFilter {
     }
 }
 
+/// A characteristic of a Peripheral simulator's GATT server, as it is saved.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ServedCharacteristic {
+    /// As it was typed or picked: "2A19", or the full 128 bits.
+    pub uuid: String,
+    /// Its user description, the 0x2901 descriptor; none when empty.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// "read", "write", "write_without_response", "notify", "indicate".
+    pub properties: Vec<String>,
+    /// The value it starts with, in hex: "48 69".
+    pub value: String,
+    /// How the value is typed and shown: "hex", "utf8", "u8", "u16:be"...
+    pub format: String,
+    /// How often it is notified or changed by itself, in ms; 0 for never.
+    pub timer_ms: u32,
+    /// The timer sends made-up live values, where bleNIMA knows the characteristic.
+    pub live: bool,
+}
+
+/// A service of a Peripheral simulator's GATT server, as it is saved.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ServedService {
+    /// As it was typed or picked: "180F", or the full 128 bits.
+    pub uuid: String,
+    /// The preset it came from, such as "nus" or "battery"; empty for one made by hand.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub preset: String,
+    /// A UART service sends what is written to it back, as a notification.
+    pub echo: bool,
+    pub characteristics: Vec<ServedCharacteristic>,
+}
+
+/// A Peripheral simulator's GATT server, as it is saved.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ServerSetup {
+    pub services: Vec<ServedService>,
+}
+
 /// One tab, as it is saved.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabSetup {
     pub name: String,
     pub kind: TabKind,
-    /// Whether it was connected, or scanning, when it was saved.
+    /// Whether it was connected, scanning or serving when it was saved.
     pub connected: bool,
     /// The device a device or terminal tab connects to: the radio's id for it.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -120,6 +162,9 @@ pub struct TabSetup {
     /// The format each characteristic's value is shown in, by key: "u16", "utf8".
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub formats: std::collections::BTreeMap<String, String>,
+    /// A Peripheral simulator's GATT server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<ServerSetup>,
 }
 
 /// The window's place and size.
@@ -257,6 +302,39 @@ mod tests {
                     ..tab("Near", TabKind::Scanner)
                 },
                 tab("Range test", TabKind::ChannelSounding),
+                TabSetup {
+                    connected: true,
+                    view: "server".into(),
+                    server: Some(ServerSetup {
+                        services: vec![ServedService {
+                            uuid: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E".into(),
+                            preset: "nus".into(),
+                            echo: true,
+                            characteristics: vec![
+                                ServedCharacteristic {
+                                    uuid: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".into(),
+                                    description: "RX".into(),
+                                    properties: vec![
+                                        "write".into(),
+                                        "write_without_response".into(),
+                                    ],
+                                    format: "utf8".into(),
+                                    ..ServedCharacteristic::default()
+                                },
+                                ServedCharacteristic {
+                                    uuid: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E".into(),
+                                    properties: vec!["notify".into()],
+                                    value: "48 69".into(),
+                                    format: "utf8".into(),
+                                    timer_ms: 1000,
+                                    live: true,
+                                    ..ServedCharacteristic::default()
+                                },
+                            ],
+                        }],
+                    }),
+                    ..tab("Phone app test", TabKind::Simulator)
+                },
             ],
         };
         workspace.save(&path).unwrap();

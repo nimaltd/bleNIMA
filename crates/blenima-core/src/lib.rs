@@ -9,6 +9,7 @@ pub mod gatt;
 pub mod names;
 pub mod radio;
 pub mod scanner;
+pub mod server;
 pub mod settings;
 mod tomlfile;
 pub mod workspace;

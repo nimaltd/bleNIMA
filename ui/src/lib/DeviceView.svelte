@@ -110,7 +110,7 @@
       <TerminalView {tab} active={active && tab.view === "terminal"} />
     </div>
     {#if tab.view === "log"}
-      <div class="pane"><LogView {device} /></div>
+      <div class="pane"><LogView source={device} /></div>
     {/if}
     {#if tab.view === "tools"}
       <div class="pane"><ToolsView {tab} /></div>

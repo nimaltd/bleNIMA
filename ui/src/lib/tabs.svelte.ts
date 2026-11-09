@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { DeviceState } from "./device.svelte";
 import { kindInfo, type TabKind } from "./new-tab";
 import { ScannerState, type ScanFilter } from "./scanner.svelte";
+import type { ServiceSetup } from "./server";
+import { ServerState } from "./server.svelte";
 import { settings } from "./settings.svelte";
 
 export type LineEnding = "cr" | "lf" | "crlf";
@@ -20,7 +22,7 @@ export type TerminalSetup = {
 export type TabSetup = {
   name: string;
   kind: TabKind;
-  /** Whether it was connected, or scanning, when it was saved. */
+  /** Whether it was connected, scanning or serving when it was saved. */
   connected: boolean;
   device?: string;
   view?: string;
@@ -28,6 +30,8 @@ export type TabSetup = {
   favourites?: string[];
   terminal?: TerminalSetup | null;
   formats?: Record<string, string>;
+  /** A Peripheral simulator's GATT server: the same fields as `ServerSetup` in workspace.rs. */
+  server?: { services: ServiceSetup[] } | null;
 };
 
 /** What the UI saves of `Workspace` in workspace.rs; the window's place comes from the window. */
@@ -41,6 +45,9 @@ let nextId = 1;
 /** The views a device tab has. */
 export type DeviceView = "gatt" | "terminal" | "log" | "tools";
 
+/** The views a Peripheral simulator tab has, when its parts are shown one at a time. */
+export type SimulatorView = "advertiser" | "server" | "log";
+
 export class Tab {
   /** Tells tabs apart while they are open, even with the same name. */
   readonly id = nextId++;
@@ -49,6 +56,7 @@ export class Tab {
   view = $state("");
   readonly scanner: ScannerState | null = null;
   readonly device: DeviceState | null = null;
+  readonly server: ServerState | null = null;
   terminal: TerminalSetup = $state({ write: "", notify: "", enter: "cr", local_echo: false });
 
   constructor(setup: TabSetup) {
@@ -63,31 +71,39 @@ export class Tab {
       this.device = new DeviceState(setup.device, setup.formats ?? {});
       this.view ||= setup.kind === "terminal" ? "terminal" : "gatt";
     }
+    if (setup.kind === "simulator") {
+      this.server = new ServerState(setup.server?.services ?? []);
+      this.view ||= "server";
+    }
     if (setup.terminal) this.terminal = { ...setup.terminal };
   }
 
-  /** Scanning, or connected or trying to be. */
+  /** Scanning, connected or trying to be, or serving. */
   get connected(): boolean {
     if (this.scanner) return this.scanner.running;
     if (this.device) return this.device.open;
+    if (this.server) return this.server.running;
     return false;
   }
 
   /** Whether this tab does anything yet, or only says when it comes. */
   get built(): boolean {
-    return this.scanner !== null || this.device !== null;
+    return this.scanner !== null || this.device !== null || this.server !== null;
   }
 
-  /** Starts scanning, or connecting. */
+  /** Starts scanning, connecting, or serving. */
   start(): void {
     void this.scanner?.start();
     void this.device?.connect();
+    // Saved again once it serves, so it serves again next time.
+    void this.server?.start().then(changed);
     changed();
   }
 
   stop(): void {
     void this.scanner?.stop();
     void this.device?.disconnect();
+    void this.server?.stop();
     changed();
   }
 
@@ -108,6 +124,7 @@ export class Tab {
       favourites: this.scanner ? [...this.scanner.favourites] : [],
       terminal: this.device ? $state.snapshot(this.terminal) : null,
       formats: this.device ? $state.snapshot(this.device.formats) : {},
+      server: this.server ? { services: $state.snapshot(this.server.services) } : null,
     };
   }
 }
@@ -136,6 +153,7 @@ export async function loadWorkspace(): Promise<void> {
       // A scanner scans when it opens; a device tab connects if it was connected.
       if (tab.scanner && setup.connected) void tab.scanner.start();
       if (tab.device && setup.connected && settings.startup.reconnect) void tab.device.connect();
+      if (tab.server && setup.connected && settings.startup.reconnect) void tab.start();
     }
     view.active = Math.min(workspace.active, Math.max(0, tabs.length - 1));
   } else {
@@ -179,6 +197,7 @@ export function closeTab(tab: Tab): void {
   }
   void tab.scanner?.close();
   void tab.device?.disconnect();
+  void tab.server?.stop();
   tabs.splice(index, 1);
   const after = index < view.active ? view.active - 1 : view.active;
   view.active = Math.min(after, Math.max(0, tabs.length - 1));

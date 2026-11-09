@@ -9,6 +9,10 @@ export type RadioInfo = {
   real_addresses: boolean;
   connection_parameters: boolean;
   pairing: boolean;
+  /** bleNIMA can be a peripheral here, with a GATT server. */
+  peripheral: boolean;
+  /** Why it cannot be a peripheral, in words; null when it can. */
+  peripheral_problem: string | null;
   limits: string[];
 };
 

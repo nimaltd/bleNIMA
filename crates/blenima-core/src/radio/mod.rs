@@ -3,6 +3,7 @@
 //! Connecting and GATT go through btleplug on every OS. Adverts go through
 //! WinRT's own watcher on Windows, which gives every advert as it was sent, and
 //! through btleplug elsewhere, where the OS only gives what it read from them.
+//! bleNIMA as a peripheral, advertising and serving GATT, is WinRT's alone.
 
 #[cfg(target_os = "windows")]
 mod windows;
@@ -24,6 +25,11 @@ use tokio::task::JoinHandle;
 use crate::advert::{AdStructure, ad, uuid_to_le};
 use crate::names;
 use crate::scanner::{AddressKind, Advert};
+use crate::server::{Place, ServerEvent, Service};
+
+/// What bleNIMA says where it cannot be a GATT server.
+#[cfg(not(target_os = "windows"))]
+const SERVER_ELSEWHERE: &str = "A GATT server from bleNIMA works on Windows for now.";
 
 /// bleNIMA advertising as a peripheral, until it is dropped.
 pub struct Advertising {
@@ -60,6 +66,46 @@ impl Advertising {
     }
 }
 
+/// bleNIMA as a GATT server, until it is dropped.
+pub struct Serving {
+    #[cfg(target_os = "windows")]
+    server: windows::GattServer,
+}
+
+impl Serving {
+    /// Serves these services and advertises them as connectable, sending what
+    /// clients do to `sink`. Blocks while the OS makes them: call it off the
+    /// async runtime.
+    pub fn start(services: &[Service], sink: UnboundedSender<ServerEvent>) -> Result<Self, String> {
+        #[cfg(target_os = "windows")]
+        {
+            Ok(Self {
+                server: windows::GattServer::start(services, sink)?,
+            })
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (services, sink);
+            Err(SERVER_ELSEWHERE.into())
+        }
+    }
+
+    /// Sets a characteristic's value, for reads; with `notify`, sends it to
+    /// every client subscribed too. Returns how many were subscribed. Blocks
+    /// while it notifies: call it off the async runtime.
+    pub fn set(&self, place: Place, data: &[u8], notify: bool) -> Result<usize, String> {
+        #[cfg(target_os = "windows")]
+        {
+            self.server.set(place, data, notify)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (place, data, notify);
+            Err(SERVER_ELSEWHERE.into())
+        }
+    }
+}
+
 /// A device the OS has a bond with.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Bond {
@@ -85,6 +131,10 @@ pub struct RadioInfo {
     pub connection_parameters: bool,
     /// bleNIMA can pair and unpair by itself, and list the bonds.
     pub pairing: bool,
+    /// bleNIMA can be a peripheral here, with a GATT server.
+    pub peripheral: bool,
+    /// Why it cannot be a peripheral, in words; none when it can.
+    pub peripheral_problem: Option<String>,
     /// What the OS does not let an app do here, in words.
     pub limits: Vec<String>,
 }
@@ -98,6 +148,8 @@ pub struct Radio {
     adapter: Adapter,
     /// How many tabs want btleplug to scan, to find a device or list them.
     scans: Mutex<usize>,
+    /// Why the adapter cannot be a peripheral, asked once when it opens; none when it can.
+    peripheral_problem: Option<String>,
 }
 
 impl Radio {
@@ -116,9 +168,16 @@ impl Radio {
         if let Ok(CentralState::PoweredOff) = adapter.adapter_state().await {
             return Err("Bluetooth is turned off. Turn it on in the OS's settings.".into());
         }
+        #[cfg(target_os = "windows")]
+        let peripheral_problem = tokio::task::spawn_blocking(windows::peripheral_problem)
+            .await
+            .unwrap_or_else(|error| Some(error.to_string()));
+        #[cfg(not(target_os = "windows"))]
+        let peripheral_problem = Some(SERVER_ELSEWHERE.to_string());
         Ok(Arc::new(Self {
             adapter,
             scans: Mutex::new(0),
+            peripheral_problem,
         }))
     }
 
@@ -128,6 +187,8 @@ impl Radio {
 
     /// What this radio can do on this OS.
     pub fn info(&self) -> RadioInfo {
+        let peripheral = self.peripheral_problem.is_none();
+        let peripheral_problem = self.peripheral_problem.clone();
         if cfg!(target_os = "windows") {
             RadioInfo {
                 name: "Windows Bluetooth".into(),
@@ -135,6 +196,8 @@ impl Radio {
                 real_addresses: true,
                 connection_parameters: true,
                 pairing: true,
+                peripheral,
+                peripheral_problem,
                 limits: vec![
                     "Windows picks the MTU and the PHY itself; bleNIMA shows what it picked."
                         .into(),
@@ -148,6 +211,8 @@ impl Radio {
                 real_addresses: false,
                 connection_parameters: false,
                 pairing: false,
+                peripheral,
+                peripheral_problem,
                 limits: vec![
                     "macOS gives each device a made-up ID instead of its address.".into(),
                     "Adverts are made again from what macOS read from them.".into(),
@@ -161,6 +226,8 @@ impl Radio {
                 real_addresses: true,
                 connection_parameters: false,
                 pairing: false,
+                peripheral,
+                peripheral_problem,
                 limits: vec![
                     "Adverts are made again from what BlueZ read from them.".into(),
                     "BlueZ picks the MTU, the PHY and the connection parameters itself.".into(),

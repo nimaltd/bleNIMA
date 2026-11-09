@@ -153,6 +153,10 @@ fn main() {
             bluetooth::advertise_start,
             bluetooth::advertise_status,
             bluetooth::advertise_stop,
+            bluetooth::server_start,
+            bluetooth::server_value,
+            bluetooth::server_stop,
+            bluetooth::standard_names,
         ])
         .run(tauri::generate_context!())
         .expect("bleNIMA could not start");
