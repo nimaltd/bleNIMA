@@ -1,0 +1,79 @@
+name: Release
+
+# A tag such as v1.0.0 builds the installers for every OS and puts them on a
+# draft GitHub Release, published once all three are there. It can also be
+# started by hand from the Actions tab.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            targets: ""
+            args: ""
+          - name: macOS
+            os: macos-latest
+            # One app for Apple Silicon and Intel.
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+          - name: Linux
+            # The oldest supported Ubuntu, so the AppImage runs on older systems too.
+            os: ubuntu-22.04
+            targets: ""
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Linux packages for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev pkg-config file
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: bleNIMA v__VERSION__
+          releaseBody: |
+            A Bluetooth LE tester for embedded developers, the same on Windows, macOS and Linux.
+
+            **Downloads**
+            - Windows 10 and 11: the `-setup.exe` installer, or the `.msi`
+            - macOS, Apple Silicon and Intel: the `.dmg`
+            - Linux: the `.AppImage`, `.deb` or `.rpm`
+
+            **The apps are not signed yet**
+            - Windows may say "Windows protected your PC": click More info, then Run anyway.
+            - macOS may say the app is damaged or cannot be checked: move it to Applications, then run `xattr -cr /Applications/bleNIMA.app` in Terminal.
+            - Linux: `chmod +x` the AppImage.
+
+            What changed: [CHANGELOG.md](https://github.com/nimaltd/bleNIMA/blob/main/CHANGELOG.md).
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

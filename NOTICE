@@ -1,0 +1,9 @@
+bleNIMA
+Copyright 2026 Nima Askari (NimaLTD)
+
+This product includes software developed by Nima Askari (NimaLTD).
+https://github.com/nimaltd
+
+It includes the Bluetooth numbers database by Nordic Semiconductor ASA,
+Copyright (c) 2019 - 2020, Nordic Semiconductor ASA, under the BSD 3-Clause
+licence in crates/blenima-core/data/LICENSE-nordic-bluetooth-numbers.

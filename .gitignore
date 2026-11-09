@@ -1,0 +1,13 @@
+# Rust
+/target/
+
+# UI
+/node_modules/
+/dist/
+
+# Made by Tauri on every build
+/src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db

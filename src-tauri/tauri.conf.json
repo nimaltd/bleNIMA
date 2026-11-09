@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bleNIMA",
+  "mainBinaryName": "bleNIMA",
+  "identifier": "com.nimaltd.blenima",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "bleNIMA",
+        "width": 1200,
+        "height": 760,
+        "minWidth": 640,
+        "minHeight": 400,
+        "center": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://api.github.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Nima Askari (NimaLTD)",
+    "copyright": "Copyright 2026 Nima Askari (NimaLTD)",
+    "category": "DeveloperTool",
+    "shortDescription": "Bluetooth LE tester",
+    "longDescription": "A Bluetooth LE tester for embedded developers, the same on Windows, Linux and macOS.",
+    "homepage": "https://github.com/nimaltd/bleNIMA",
+    "license": "Apache-2.0",
+    "licenseFile": "../LICENSE.md",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
