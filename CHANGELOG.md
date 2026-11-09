@@ -5,6 +5,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
 ### Added
 
 - A GATT server in Peripheral simulator tabs, on Windows: bleNIMA as a device for
@@ -122,5 +124,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   dongle, nor what only a dongle could do: the sniffer, direction finding,
   Channel Sounding and LE Audio streams.
 
-[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.1.0
