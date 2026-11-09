@@ -83,5 +83,6 @@ test("standard characteristics are put into words", () => {
     decodeProfile(parameters, [0x18, 0x00, 0x28, 0x00, 0x00, 0x00, 0x90, 0x01])?.text,
     "interval 30 to 50 ms, latency 0, timeout 4000 ms",
   );
-  assert.equal(decodeProfile("6e400003-b5a3-f393-e0a9-e50e24dcca9e", [1]), null);
+  // A vendor's own characteristic, MCUmgr SMP's, is not a standard one.
+  assert.equal(decodeProfile("da2e7828-fbce-4e01-ae9e-261174997c48", [1]), null);
 });

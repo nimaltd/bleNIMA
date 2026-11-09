@@ -2,11 +2,13 @@
   import { onMount } from "svelte";
   import { save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
+  import DeviceCard from "./DeviceCard.svelte";
   import GattView from "./GattView.svelte";
   import LogView from "./LogView.svelte";
   import TerminalView from "./TerminalView.svelte";
   import ToolsView from "./ToolsView.svelte";
   import { radioInfo, type RadioInfo } from "./bluetooth";
+  import { settings } from "./settings.svelte";
   import type { Tab } from "./tabs.svelte";
 
   let { tab, active }: { tab: Tab; active: boolean } = $props();
@@ -97,6 +99,10 @@
       {/each}
     </div>
   </div>
+
+  {#if settings.device_card === "above_all"}
+    <DeviceCard {device} />
+  {/if}
 
   <div class="body">
     {#if busy() && device.services.length === 0}

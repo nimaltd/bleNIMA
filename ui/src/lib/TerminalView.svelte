@@ -5,7 +5,7 @@
   import { PROPERTY, TERMINAL_PRESETS, type CharacteristicInfo } from "./bluetooth";
   import { changed, type LineEnding, type Tab } from "./tabs.svelte";
   import { appScheme } from "./theme.svelte";
-  import { settings } from "./settings.svelte";
+  import { settings, unzoomed } from "./settings.svelte";
 
   let { tab, active }: { tab: Tab; active: boolean } = $props();
   const device = $derived(tab.device!);
@@ -86,7 +86,7 @@
   onMount(() => {
     term = new Terminal({
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-      fontSize: settings.font_size,
+      fontSize: unzoomed(settings.font_size),
       scrollback: 10000,
       convertEol: false,
       theme: theme(),
@@ -118,7 +118,7 @@
   });
 
   $effect(() => {
-    if (term) term.options.fontSize = settings.font_size;
+    if (term) term.options.fontSize = unzoomed(settings.font_size);
     fit?.fit();
   });
 

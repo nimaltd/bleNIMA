@@ -14,6 +14,14 @@ pub const FONT_SIZE_MAX: u8 = 24;
 /// Text size of the views for a new install, in pixels.
 pub const FONT_SIZE_DEFAULT: u8 = 13;
 
+/// Smallest text size of the menus, tabs, buttons and dialogs, in pixels.
+pub const MENU_FONT_SIZE_MIN: u8 = 10;
+/// Largest text size of the menus, tabs, buttons and dialogs, in pixels.
+pub const MENU_FONT_SIZE_MAX: u8 = 26;
+/// Text size of the menus, tabs, buttons and dialogs for a new install, in
+/// pixels: a quarter bigger than the 13 they were before.
+pub const MENU_FONT_SIZE_DEFAULT: u8 = 16;
+
 /// Written at the top of the file, so someone who opens it knows what it is.
 const HEADER: &str = "# bleNIMA settings. Edit them while bleNIMA is closed.\n\n";
 
@@ -26,6 +34,22 @@ pub enum Theme {
     System,
     Dark,
     Light,
+}
+
+/// Where a device tab shows its device information card: name, battery,
+/// Device Information and the others it reads by itself after connecting.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceCard {
+    /// A card in two columns at the top of the GATT view.
+    #[default]
+    AboveGatt,
+    /// One line at the top of the GATT view; the rest under "More".
+    Strip,
+    /// A card in two columns over every view: GATT, Terminal, Log and Tests.
+    AboveAll,
+    /// No card, and nothing read for it.
+    Off,
 }
 
 /// What comes back when bleNIMA starts.
@@ -95,8 +119,11 @@ pub struct SimulatorSettings {
 #[serde(default)]
 pub struct Settings {
     pub theme: Theme,
+    /// The text size of the menus, tabs, buttons and dialogs, which grow with it.
+    pub menu_font_size: u8,
     /// The text size of the views: lists, values and terminals.
     pub font_size: u8,
+    pub device_card: DeviceCard,
     pub startup: StartupSettings,
     pub updates: UpdateSettings,
     pub simulator: SimulatorSettings,
@@ -106,7 +133,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: Theme::System,
+            menu_font_size: MENU_FONT_SIZE_DEFAULT,
             font_size: FONT_SIZE_DEFAULT,
+            device_card: DeviceCard::default(),
             startup: StartupSettings::default(),
             updates: UpdateSettings::default(),
             simulator: SimulatorSettings::default(),
@@ -127,6 +156,9 @@ impl Settings {
 
     /// The same settings with every value moved into its allowed range.
     pub fn checked(mut self) -> Self {
+        self.menu_font_size = self
+            .menu_font_size
+            .clamp(MENU_FONT_SIZE_MIN, MENU_FONT_SIZE_MAX);
         self.font_size = self.font_size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
         self
     }
@@ -154,7 +186,9 @@ mod tests {
         let path = dir.file("nested/folder/settings.toml");
         let settings = Settings {
             theme: Theme::Light,
+            menu_font_size: 20,
             font_size: 18,
+            device_card: DeviceCard::Strip,
             startup: StartupSettings {
                 restore_tabs: true,
                 reconnect: false,
@@ -181,7 +215,9 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.starts_with("# bleNIMA settings"));
         assert!(text.contains("theme = \"system\""));
+        assert!(text.contains("menu_font_size = 16"));
         assert!(text.contains("font_size = 13"));
+        assert!(text.contains("device_card = \"above_gatt\""));
     }
 
     #[test]
@@ -191,7 +227,9 @@ mod tests {
         fs::write(&path, "theme = \"dark\"\n").unwrap();
         let settings = Settings::load(&path);
         assert_eq!(settings.theme, Theme::Dark);
+        assert_eq!(settings.menu_font_size, MENU_FONT_SIZE_DEFAULT);
         assert_eq!(settings.font_size, FONT_SIZE_DEFAULT);
+        assert_eq!(settings.device_card, DeviceCard::AboveGatt);
         assert!(settings.startup.restore_tabs && settings.startup.reconnect);
         assert!(settings.updates.check);
         assert_eq!(settings.updates.skipped, "");
@@ -239,5 +277,19 @@ mod tests {
         };
         assert_eq!(small.checked().font_size, FONT_SIZE_MIN);
         assert_eq!(large.checked().font_size, FONT_SIZE_MAX);
+    }
+
+    #[test]
+    fn menu_font_size_is_kept_in_range() {
+        let small = Settings {
+            menu_font_size: 2,
+            ..Settings::default()
+        };
+        let large = Settings {
+            menu_font_size: 200,
+            ..Settings::default()
+        };
+        assert_eq!(small.checked().menu_font_size, MENU_FONT_SIZE_MIN);
+        assert_eq!(large.checked().menu_font_size, MENU_FONT_SIZE_MAX);
     }
 }

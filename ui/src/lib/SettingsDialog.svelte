@@ -3,8 +3,11 @@
   import {
     FONT_SIZE_MAX,
     FONT_SIZE_MIN,
+    MENU_FONT_SIZE_MAX,
+    MENU_FONT_SIZE_MIN,
     settings,
     updateSettings,
+    type DeviceCard,
     type StartupSettings,
     type ThemeChoice,
     type UpdateSettings,
@@ -15,20 +18,28 @@
 
   // A copy of the settings: nothing changes until Save.
   let theme: ThemeChoice = $state(settings.theme);
+  let menuFontSize = $state(settings.menu_font_size);
   let fontSize = $state(settings.font_size);
+  let deviceCard: DeviceCard = $state(settings.device_card);
   let startup: StartupSettings = $state({ ...settings.startup });
   let updates: UpdateSettings = $state({ ...settings.updates });
   let simulator: SimulatorSettings = $state({ ...settings.simulator });
   let error = $state("");
 
   function submit() {
+    if (!Number.isInteger(menuFontSize) || menuFontSize < MENU_FONT_SIZE_MIN || menuFontSize > MENU_FONT_SIZE_MAX) {
+      error = `The menu text size must be a whole number from ${MENU_FONT_SIZE_MIN} to ${MENU_FONT_SIZE_MAX}.`;
+      return;
+    }
     if (!Number.isInteger(fontSize) || fontSize < FONT_SIZE_MIN || fontSize > FONT_SIZE_MAX) {
       error = `The text size must be a whole number from ${FONT_SIZE_MIN} to ${FONT_SIZE_MAX}.`;
       return;
     }
     updateSettings({
       theme,
+      menu_font_size: menuFontSize,
       font_size: fontSize,
+      device_card: deviceCard,
       startup: { ...startup },
       updates: { ...updates },
       simulator: { ...simulator },
@@ -49,11 +60,41 @@
       </select>
     </label>
     <label class="dlg-label">
+      Menu text size
+      <input
+        class="field mono"
+        type="number"
+        min={MENU_FONT_SIZE_MIN}
+        max={MENU_FONT_SIZE_MAX}
+        bind:value={menuFontSize}
+      />
+    </label>
+    <label class="dlg-label">
       Text size
       <input class="field mono" type="number" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} bind:value={fontSize} />
     </label>
   </div>
-  <p class="dlg-hint">The text size is for the views: lists, values and terminals.</p>
+  <p class="dlg-hint">
+    The menu text size is for the menus, tabs, buttons and dialogs, which grow with it. The text size is for the views:
+    lists, values and terminals.
+  </p>
+
+  <h2 class="dlg-section">Device tabs</h2>
+  <div class="dlg-grid">
+    <label class="dlg-label">
+      Device information
+      <select class="field" bind:value={deviceCard}>
+        <option value="above_gatt">A card over the GATT view</option>
+        <option value="strip">One line over the GATT view</option>
+        <option value="above_all">A card over every view</option>
+        <option value="off">None</option>
+      </select>
+    </label>
+  </div>
+  <p class="dlg-hint">
+    The name, appearance, battery and Device Information, read by themselves each time a device tab connects. With
+    None, nothing is read for it.
+  </p>
 
   <h2 class="dlg-section">Startup</h2>
   <p class="dlg-hint">What bleNIMA brings back from last time when it starts.</p>

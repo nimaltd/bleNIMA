@@ -9,6 +9,9 @@ import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  MENU_FONT_SIZE_DEFAULT,
+  MENU_FONT_SIZE_MAX,
+  MENU_FONT_SIZE_MIN,
   settings,
   updateSettings,
   type ThemeChoice,
@@ -55,6 +58,8 @@ export function buildMenus(app: AppActions): Menu[] {
   });
   const textSize = (size: number) =>
     updateSettings({ font_size: Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size)) });
+  const menuTextSize = (size: number) =>
+    updateSettings({ menu_font_size: Math.min(MENU_FONT_SIZE_MAX, Math.max(MENU_FONT_SIZE_MIN, size)) });
 
   const hasTab = () => activeTab() !== undefined;
   const hasTabs = () => tabs.length > 1;
@@ -182,6 +187,10 @@ export function buildMenus(app: AppActions): Menu[] {
           shortcut: keys("Ctrl+0", "Cmd+0"),
           run: () => textSize(FONT_SIZE_DEFAULT),
         },
+        null,
+        { label: "Bigger menu text", run: () => menuTextSize(settings.menu_font_size + 1) },
+        { label: "Smaller menu text", run: () => menuTextSize(settings.menu_font_size - 1) },
+        { label: "Normal menu text size", run: () => menuTextSize(MENU_FONT_SIZE_DEFAULT) },
         null,
         theme("System theme", "system"),
         theme("Dark theme", "dark"),

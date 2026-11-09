@@ -21,6 +21,46 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A Peripheral simulator section in Settings: the tab shows its advertiser, GATT server
   and log one at a time, on one page, or in two columns.
 - The `serve` example, to try the GATT server from a terminal.
+- A menu text size, apart from the text size: the menus, tabs, buttons and
+  dialogs grow with it, and the views' text stays at the text size. It is in
+  Settings and in the View menu (Bigger menu text, Smaller menu text, Normal
+  menu text size), from 10 to 26 pixels. It is the same in bleNIMA, terNIMA
+  and libNIMA.
+- A device information card in device tabs: the name, appearance, battery
+  level and Device Information (manufacturer, model, serial number, firmware,
+  hardware and software revisions, PnP ID), read by themselves each time the
+  tab connects. Settings says where it shows: a card over the GATT view, one
+  line over it, a card over every view, or none.
+- More standard characteristics in words: Appearance, Service Changed, Alert
+  Level, Tx Power Level, System ID, Central Address Resolution, Client and
+  Server Supported Features, Database Hash; Current Time, Local Time
+  Information, Reference Time Information, Date Time; Blood Pressure,
+  Intermediate Cuff Pressure, Weight, Glucose, pulse oximeter spot-check and
+  continuous, Body Sensor Location, Temperature Type, Measurement Interval and
+  the Blood Pressure, Weight Scale and Glucose features; Cycling Power and its
+  features, Sensor Location, the CSC and RSC features, and Elevation, UV Index,
+  Dew Point, Heat Index, Wind Chill and true wind speed and direction. The
+  Nordic UART Service's values show as text, and writing to it starts in Text.
+- Write forms for standard values, instead of hex: Current Time set to now,
+  Local Time Information set to the PC's time zone, Alert Level (no, mild or
+  high alert) for Find Me and Link Loss, Reset energy expended on the Heart
+  Rate Control Point, the SC Control Point's and Cycling Power Control
+  Point's requests, the Record Access Control Point's Report all, Number of
+  records, Delete all and Abort, and Measurement Interval in seconds. The
+  control points' answers are in words too.
+- Standard descriptors in words: the CCCD, with a button that turns
+  notifications or indications on and off, Extended Properties, User
+  Description, Server Characteristic Configuration, Presentation Format,
+  Aggregate Format, Valid Range in its characteristic's format, External
+  Report Reference, Report Reference, Number of Digitals, the value and time
+  trigger settings, and the Environmental Sensing descriptors. The log shows
+  them in words too.
+
+### Changed
+
+- The menus, tabs, buttons and dialogs are a quarter bigger than before: the
+  menu text size starts at 16 pixels, where it was 13. Set it to 13 in
+  Settings to have the old size.
 
 ## [0.1.0] - 2026-11-09
 

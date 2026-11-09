@@ -1,10 +1,15 @@
 <script lang="ts">
   import Chart, { align } from "./Chart.svelte";
+  import DeviceCard from "./DeviceCard.svelte";
+  import StandardWrite from "./StandardWrite.svelte";
   import { PROPERTY, type CharacteristicInfo } from "./bluetooth";
+  import { isCccd } from "./descriptors";
   import { formatText, type DeviceState } from "./device.svelte";
   import { FORMATS, encodeNumber, hex, numbers, parseHex, parseText, width, type Format } from "./format";
-  import { characteristicUuid, decodeProfile } from "./profiles";
+  import { characteristicUuid, isUartText, shortUuid } from "./profiles";
+  import { settings } from "./settings.svelte";
   import { changed } from "./tabs.svelte";
+  import { FORMS } from "./writes";
 
   let { device }: { device: DeviceState } = $props();
 
@@ -15,6 +20,11 @@
 
   const selected = $derived(device.characteristic(device.selected));
   const has = (c: CharacteristicInfo | undefined, bit: number) => c !== undefined && (c.properties & bit) !== 0;
+
+  // The Nordic UART Service takes text: writing to it starts in Text.
+  $effect(() => {
+    if (selected && isUartText(characteristicUuid(selected.key))) mode = "text";
+  });
 
   const BADGES: [number, string, string][] = [
     [PROPERTY.read, "R", "read"],
@@ -66,7 +76,7 @@
     const start = history[0]?.at ?? 0;
     const { format, littleEndian, exponent } = device.formatOf(selected.key);
     for (const value of history) {
-      const known = device.formats[selected.key] ? null : decodeProfile(characteristicUuid(selected.key), value.data);
+      const known = device.formats[selected.key] ? null : device.decode(selected.key, value.data);
       const named: [string, number][] = known
         ? Object.entries(known.values)
         : numbers(value.data, format, littleEndian, exponent).map((v, at) => [`value ${at + 1}`, v]);
@@ -93,166 +103,192 @@
   }
 </script>
 
-<div class="gatt">
-  <div class="tree" role="tree" aria-label="GATT table">
-    {#each device.services as service (service.key)}
-      <div class="service" role="treeitem" aria-selected="false" aria-expanded="true">
-        <span class="title">{service.name ?? "Unknown service"}</span>
-        <span class="uuid mono">{service.uuid}</span>
-      </div>
-      {#each service.characteristics as characteristic (characteristic.key)}
-        <button
-          class="characteristic"
-          class:selected={device.selected === characteristic.key}
-          role="treeitem"
-          aria-selected={device.selected === characteristic.key}
-          onclick={() => (device.selected = characteristic.key)}
-        >
-          <span class="line">
-            <span class="title">{characteristic.user_description || characteristic.name || "Unknown characteristic"}</span>
-            <span class="badges">
-              {#each BADGES as [bit, label, title] (label)}
-                {#if characteristic.properties & bit}<span class="badge" {title}>{label}</span>{/if}
-              {/each}
-              {#if device.subscribed.has(characteristic.key)}<span class="badge on" title="Notifications on">●</span>{/if}
-            </span>
-          </span>
-          <span class="uuid mono">{characteristic.uuid}</span>
-          {#if device.values.has(characteristic.key)}
-            <span class="preview">{preview(characteristic.key)}</span>
-          {/if}
-        </button>
-      {/each}
-    {:else}
-      <p class="empty">{device.connected ? "The device has no services." : "Its services show once it is connected."}</p>
-    {/each}
-  </div>
-
-  <div class="panel">
-    {#if selected}
-      {@const choice = device.formatOf(selected.key)}
-      {@const value = device.values.get(selected.key)}
-      <h2>{selected.user_description || selected.name || "Unknown characteristic"}</h2>
-      <p class="uuid mono">{selected.uuid}</p>
-      <p class="muted">{selected.property_names.join(", ")}</p>
-
-      <div class="value">
-        <div class="shown">{value ? device.describe(selected.key, value.data) : "No value read yet"}</div>
-        {#if value}
-          <div class="hex mono">{hex(value.data)} · {value.data.length} bytes · {value.source.replace(/_/g, " ")} at {time(value.at)}</div>
-        {/if}
-      </div>
-
-      <div class="actions">
-        <button class="btn small" disabled={!device.connected || !has(selected, PROPERTY.read)} onclick={() => device.read(selected.key)}
-          >Read</button
-        >
-        {#if has(selected, PROPERTY.notify) || has(selected, PROPERTY.indicate)}
-          {@const on = device.subscribed.has(selected.key)}
+<div class="gatt-view">
+  {#if settings.device_card === "above_gatt" || settings.device_card === "strip"}
+    <DeviceCard {device} strip={settings.device_card === "strip"} />
+  {/if}
+  <div class="gatt">
+    <div class="tree" role="tree" aria-label="GATT table">
+      {#each device.services as service (service.key)}
+        <div class="service" role="treeitem" aria-selected="false" aria-expanded="true">
+          <span class="title">{service.name ?? "Unknown service"}</span>
+          <span class="uuid mono">{service.uuid}</span>
+        </div>
+        {#each service.characteristics as characteristic (characteristic.key)}
           <button
-            class="btn small"
-            class:primary={on}
-            disabled={!device.connected}
-            onclick={() => device.subscribe(selected.key, !on)}
-            >{on ? "Stop" : has(selected, PROPERTY.notify) ? "Notify" : "Indicate"}</button
+            class="characteristic"
+            class:selected={device.selected === characteristic.key}
+            role="treeitem"
+            aria-selected={device.selected === characteristic.key}
+            onclick={() => (device.selected = characteristic.key)}
           >
-        {/if}
-        <label class="option">
-          Show as
-          <select
-            class="field small"
-            value={device.formats[selected.key]?.split(":")[0] ?? "auto"}
-            onchange={(event) => setFormat(selected.key, (event.currentTarget as HTMLSelectElement).value, choice.littleEndian)}
-          >
-            <option value="auto">Automatic{selected.format ? ` (${selected.format.format})` : ""}</option>
-            {#each FORMATS as { format, label } (format)}
-              <option value={format}>{label}</option>
-            {/each}
-          </select>
-        </label>
-        {#if width(choice.format) > 1}
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={!choice.littleEndian}
-              onchange={(event) => setFormat(selected.key, choice.format, !(event.currentTarget as HTMLInputElement).checked)}
-            /> Big-endian
-          </label>
-        {/if}
-        <label class="check"><input type="checkbox" bind:checked={showPlot} /> Plot</label>
-      </div>
+            <span class="line">
+              <span class="title">{characteristic.user_description || characteristic.name || "Unknown characteristic"}</span>
+              <span class="badges">
+                {#each BADGES as [bit, label, title] (label)}
+                  {#if characteristic.properties & bit}<span class="badge" {title}>{label}</span>{/if}
+                {/each}
+                {#if device.subscribed.has(characteristic.key)}<span class="badge on" title="Notifications on">●</span>{/if}
+              </span>
+            </span>
+            <span class="uuid mono">{characteristic.uuid}</span>
+            {#if device.values.has(characteristic.key)}
+              <span class="preview">{preview(characteristic.key)}</span>
+            {/if}
+          </button>
+        {/each}
+      {:else}
+        <p class="empty">{device.connected ? "The device has no services." : "Its services show once it is connected."}</p>
+      {/each}
+    </div>
 
-      {#if has(selected, PROPERTY.write) || has(selected, PROPERTY.writeWithoutResponse)}
-        <div class="write">
-          <select class="field small" bind:value={mode} title="How what is typed becomes bytes">
-            <option value="text">Text</option>
-            <option value="hex">Hex</option>
-            <option value="number" disabled={width(choice.format) === 0}>Number ({choice.format})</option>
-          </select>
-          <input
-            class="field small mono"
-            placeholder={mode === "hex" ? "AA 55 01" : mode === "text" ? "text, \\r \\n \\x03" : "42"}
-            bind:value={input}
-            onkeydown={(event) => event.key === "Enter" && write(has(selected, PROPERTY.write))}
-            spellcheck="false"
-          />
-          {#if has(selected, PROPERTY.write)}
-            <button class="btn small primary" disabled={!device.connected} onclick={() => write(true)}>Write</button>
+    <div class="panel">
+      {#if selected}
+        {@const choice = device.formatOf(selected.key)}
+        {@const value = device.values.get(selected.key)}
+        <h2>{selected.user_description || selected.name || "Unknown characteristic"}</h2>
+        <p class="uuid mono">{selected.uuid}</p>
+        <p class="muted">{selected.property_names.join(", ")}</p>
+
+        <div class="value">
+          <div class="shown">{value ? device.describe(selected.key, value.data) : "No value read yet"}</div>
+          {#if value}
+            <div class="hex mono">{hex(value.data)} · {value.data.length} bytes · {value.source.replace(/_/g, " ")} at {time(value.at)}</div>
           {/if}
-          {#if has(selected, PROPERTY.writeWithoutResponse)}
-            <button class="btn small" disabled={!device.connected} onclick={() => write(false)} title="Write without response"
-              >Write, no response</button
+        </div>
+
+        <div class="actions">
+          <button class="btn small" disabled={!device.connected || !has(selected, PROPERTY.read)} onclick={() => device.read(selected.key)}
+            >Read</button
+          >
+          {#if has(selected, PROPERTY.notify) || has(selected, PROPERTY.indicate)}
+            {@const on = device.subscribed.has(selected.key)}
+            <button
+              class="btn small"
+              class:primary={on}
+              disabled={!device.connected}
+              onclick={() => device.subscribe(selected.key, !on)}
+              >{on ? "Stop" : has(selected, PROPERTY.notify) ? "Notify" : "Indicate"}</button
             >
           {/if}
-        </div>
-        {#if problem}<p class="problem">{problem}</p>{/if}
-      {/if}
-
-      {#if selected.descriptors.length > 0}
-        <h3>Descriptors</h3>
-        {#each selected.descriptors as descriptor (descriptor.key)}
-          {@const read = device.values.get(descriptor.key)}
-          <div class="descriptor">
-            <span>{descriptor.name ?? "Unknown descriptor"} <span class="uuid mono">{descriptor.uuid}</span></span>
-            <span class="mono">{read ? hex(read.data) : ""}</span>
-            <button class="btn tiny" disabled={!device.connected} onclick={() => device.readDescriptor(descriptor.key)}>Read</button>
-          </div>
-        {/each}
-      {/if}
-
-      {#if plot}
-        <div class="chart">
-          {#if plot.labels.length > 0}
-            <Chart labels={plot.labels} data={plot.data} version={device.version} unit={choice.unit} />
-          {:else}
-            <p class="muted">No numbers to plot yet: pick a number format, and read or notify.</p>
+          <label class="option">
+            Show as
+            <select
+              class="field small"
+              value={device.formats[selected.key]?.split(":")[0] ?? "auto"}
+              onchange={(event) => setFormat(selected.key, (event.currentTarget as HTMLSelectElement).value, choice.littleEndian)}
+            >
+              <option value="auto">Automatic{selected.format ? ` (${selected.format.format})` : ""}</option>
+              {#each FORMATS as { format, label } (format)}
+                <option value={format}>{label}</option>
+              {/each}
+            </select>
+          </label>
+          {#if width(choice.format) > 1}
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!choice.littleEndian}
+                onchange={(event) => setFormat(selected.key, choice.format, !(event.currentTarget as HTMLInputElement).checked)}
+              /> Big-endian
+            </label>
           {/if}
+          <label class="check"><input type="checkbox" bind:checked={showPlot} /> Plot</label>
         </div>
-      {/if}
 
-      {#if recent.length > 0}
-        <h3>Values</h3>
-        <div class="history">
-          {#each recent as entry, at (at)}
-            <div class="entry">
-              <span class="muted mono">{time(entry.at)}</span>
-              <span class="kind">{entry.source.replace(/_/g, " ")}</span>
-              <span>{device.describe(selected.key, entry.data)}</span>
+        {#if has(selected, PROPERTY.write) || has(selected, PROPERTY.writeWithoutResponse)}
+          {@const short = shortUuid(characteristicUuid(selected.key))}
+          {#if short !== null && FORMS.has(short)}
+            {#key selected.key}
+              <StandardWrite {device} characteristic={selected} />
+            {/key}
+          {/if}
+          <div class="write">
+            <select class="field small" bind:value={mode} title="How what is typed becomes bytes">
+              <option value="text">Text</option>
+              <option value="hex">Hex</option>
+              <option value="number" disabled={width(choice.format) === 0}>Number ({choice.format})</option>
+            </select>
+            <input
+              class="field small mono"
+              placeholder={mode === "hex" ? "AA 55 01" : mode === "text" ? "text, \\r \\n \\x03" : "42"}
+              bind:value={input}
+              onkeydown={(event) => event.key === "Enter" && write(has(selected, PROPERTY.write))}
+              spellcheck="false"
+            />
+            {#if has(selected, PROPERTY.write)}
+              <button class="btn small primary" disabled={!device.connected} onclick={() => write(true)}>Write</button>
+            {/if}
+            {#if has(selected, PROPERTY.writeWithoutResponse)}
+              <button class="btn small" disabled={!device.connected} onclick={() => write(false)} title="Write without response"
+                >Write, no response</button
+              >
+            {/if}
+          </div>
+          {#if problem}<p class="problem">{problem}</p>{/if}
+        {/if}
+
+        {#if selected.descriptors.length > 0}
+          <h3>Descriptors</h3>
+          {#each selected.descriptors as descriptor (descriptor.key)}
+            {@const read = device.values.get(descriptor.key)}
+            <div class="descriptor">
+              <span>{descriptor.name ?? "Unknown descriptor"} <span class="uuid mono">{descriptor.uuid}</span></span>
+              <span class="said" title={read ? hex(read.data) : ""}>{read ? device.describeDescriptor(descriptor.key, read.data) : ""}</span>
+              <span class="buttons">
+                {#if isCccd(descriptor.key) && (has(selected, PROPERTY.notify) || has(selected, PROPERTY.indicate))}
+                  {@const on = device.subscribed.has(selected.key)}
+                  <button class="btn tiny" disabled={!device.connected} onclick={() => device.configure(descriptor.key, !on)}
+                    >{on ? "Stop" : has(selected, PROPERTY.notify) ? "Notify" : "Indicate"}</button
+                  >
+                {/if}
+                <button class="btn tiny" disabled={!device.connected} onclick={() => device.readDescriptor(descriptor.key)}>Read</button>
+              </span>
             </div>
           {/each}
-        </div>
+        {/if}
+
+        {#if plot}
+          <div class="chart">
+            {#if plot.labels.length > 0}
+              <Chart labels={plot.labels} data={plot.data} version={device.version} unit={choice.unit} />
+            {:else}
+              <p class="muted">No numbers to plot yet: pick a number format, and read or notify.</p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if recent.length > 0}
+          <h3>Values</h3>
+          <div class="history">
+            {#each recent as entry, at (at)}
+              <div class="entry">
+                <span class="muted mono">{time(entry.at)}</span>
+                <span class="kind">{entry.source.replace(/_/g, " ")}</span>
+                <span>{device.describe(selected.key, entry.data)}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {:else}
+        <p class="empty">Select a characteristic to read, write or subscribe to it.</p>
       {/if}
-    {:else}
-      <p class="empty">Select a characteristic to read, write or subscribe to it.</p>
-    {/if}
+    </div>
   </div>
 </div>
 
 <style>
-  .gatt {
+  .gatt-view {
     display: flex;
+    flex-direction: column;
     height: 100%;
     font-size: var(--view-size);
+  }
+
+  .gatt {
+    display: flex;
+    flex: 1;
+    min-height: 0;
   }
 
   .tree {
@@ -421,11 +457,20 @@
 
   .descriptor {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
     align-items: center;
     gap: 10px;
     padding: 4px 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .said {
+    overflow-wrap: anywhere;
+  }
+
+  .buttons {
+    display: flex;
+    gap: 6px;
   }
 
   .chart {

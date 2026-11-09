@@ -3,9 +3,16 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { appearanceName } from "./appearance";
+import { PROPERTY } from "./bluetooth";
 import type { CharacteristicInfo, Command, DeviceEvent, Link, LinkState, ServiceInfo, Source } from "./bluetooth";
-import { hex, show, type Format } from "./format";
-import { characteristicUuid, decodeProfile } from "./profiles";
+import { decodeDescriptor, descriptorUuid, isCccd, valueFormat, type ValueFormat } from "./descriptors";
+import { hex, show, width, type Format } from "./format";
+import { DEVICE_INFO, characteristicUuid, decodeProfile, infoText, shortUuid, type Names } from "./profiles";
+import { settings } from "./settings.svelte";
+
+/** The names the decoders take from the tables. */
+const NAMES: Names = { appearance: appearanceName };
 
 /** How many lines the log keeps. */
 const LOG_KEPT = 5000;
@@ -74,6 +81,8 @@ export class DeviceState {
   private lineCount = 0;
   /** Subscriptions asked for and not answered yet, so none is asked twice. */
   private pending = new Set<string>();
+  /** The CCCDs shown in words, read again when their characteristic is subscribed or not. */
+  private shownCccds = new Set<string>();
 
   constructor(device: string, formats: Record<string, string>) {
     this.device = device;
@@ -121,11 +130,63 @@ export class DeviceState {
   /** A value in words: a standard characteristic's meaning, or the chosen format. */
   describe(key: string, data: number[]): string {
     if (!this.formats[key]) {
-      const known = decodeProfile(characteristicUuid(key), data);
+      const known = decodeProfile(characteristicUuid(key), data, NAMES);
       if (known) return known.text;
     }
     const { format, littleEndian, exponent, unit } = this.formatOf(key);
     return show(data, format, littleEndian, exponent, unit);
+  }
+
+  /** A standard characteristic's value decoded, with its numbers by name for plotting; null for others. */
+  decode(key: string, data: number[]): ReturnType<typeof decodeProfile> {
+    return decodeProfile(characteristicUuid(key), data, NAMES);
+  }
+
+  /** How a characteristic's value is read, for its Valid Range and trigger descriptors. */
+  private valueFormat(key: string): ValueFormat | null {
+    const chosen = parseFormat(this.formats[key]);
+    if (chosen && width(chosen.format) > 0) return { format: chosen.format, exponent: 0, unit: "" };
+    return valueFormat(characteristicUuid(key), this.characteristic(key)?.format ?? null);
+  }
+
+  /** A descriptor's value in words, or in hex when it is not a standard one. */
+  describeDescriptor(key: string, data: number[]): string {
+    const characteristic = key.split("/").slice(0, 2).join("/");
+    return decodeDescriptor(descriptorUuid(key), data, this.valueFormat(characteristic)) ?? hex(data);
+  }
+
+  /** The key of the first characteristic with this 16-bit UUID, or null when the device has none. */
+  private standardKey(short: number): string | null {
+    for (const service of this.services) {
+      for (const characteristic of service.characteristics) {
+        if (shortUuid(characteristicUuid(characteristic.key)) === short) return characteristic.key;
+      }
+    }
+    return null;
+  }
+
+  /** Whether the device has any of what the device information card shows. */
+  get hasInfo(): boolean {
+    return DEVICE_INFO.some(({ uuid }) => this.standardKey(uuid) !== null);
+  }
+
+  /** The device information card's rows: those the device has, and that have been read. */
+  get info(): { label: string; text: string }[] {
+    const rows: { label: string; text: string }[] = [];
+    for (const { uuid, label } of DEVICE_INFO) {
+      const key = this.standardKey(uuid);
+      const value = key ? this.values.get(key) : undefined;
+      if (value && value.data.length > 0) rows.push({ label, text: infoText(uuid, value.data, NAMES) });
+    }
+    return rows;
+  }
+
+  /** Reads what the device information card shows: each one the device has and lets be read. */
+  readInfo(): void {
+    for (const { uuid } of DEVICE_INFO) {
+      const key = this.standardKey(uuid);
+      if (key && ((this.characteristic(key)?.properties ?? 0) & PROPERTY.read) !== 0) this.read(key);
+    }
   }
 
   private addLine(line: Omit<LogLine, "n" | "time">): void {
@@ -143,6 +204,7 @@ export class DeviceState {
         if (event.state === "connected" && was !== "connected") {
           this.connectedAt = Date.now();
           void this.checkPaired();
+          if (settings.device_card !== "off") this.readInfo();
         }
         if (event.state !== "connected") this.connectedAt = null;
         if (event.state === "waiting" && was === "connected") {
@@ -178,7 +240,10 @@ export class DeviceState {
           kind: event.source,
           key: event.key,
           name: this.nameOf(event.source === "descriptor" ? event.key.split("/").slice(0, 2).join("/") : event.key),
-          text: event.source === "descriptor" ? hex(event.data) : this.describe(event.key, event.data),
+          text:
+            event.source === "descriptor"
+              ? this.describeDescriptor(event.key, event.data)
+              : this.describe(event.key, event.data),
           hex: hex(event.data),
         });
         break;
@@ -194,6 +259,10 @@ export class DeviceState {
           text: event.on ? "Notifications on" : "Notifications off",
           hex: "",
         });
+        // A CCCD shown in words shows its new value.
+        for (const descriptor of this.characteristic(event.key)?.descriptors ?? []) {
+          if (this.shownCccds.has(descriptor.key)) this.readDescriptor(descriptor.key);
+        }
         break;
       case "failed":
         if (event.key) {
@@ -270,7 +339,14 @@ export class DeviceState {
   }
 
   readDescriptor(key: string): void {
+    if (isCccd(key)) this.shownCccds.add(key);
     this.send({ type: "read_descriptor", key });
+  }
+
+  /** Turns notifications or indications on or off from a CCCD's row, which then shows its new value. */
+  configure(cccd: string, on: boolean): void {
+    this.shownCccds.add(cccd);
+    this.subscribe(cccd.split("/").slice(0, 2).join("/"), on);
   }
 
   async checkPaired(): Promise<void> {

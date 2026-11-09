@@ -17,7 +17,7 @@
   import Welcome from "./lib/Welcome.svelte";
   import { buildMenus, isEnabled, itemForKey, menuCommands, menuForAltKey } from "./lib/menus";
   import type { Command } from "./lib/palette";
-  import { loadSettings, settings, updateSettings } from "./lib/settings.svelte";
+  import { loadSettings, settings, unzoomed, updateSettings } from "./lib/settings.svelte";
   import { activeTab, loadWorkspace, newTab, showTab, tabs, view } from "./lib/tabs.svelte";
   import { appScheme } from "./lib/theme.svelte";
   import { checkForUpdate, type UpdateCheck } from "./lib/update";
@@ -133,7 +133,7 @@
   <MenuBar bind:this={menuBar} {menus} onclose={() => {}} />
   <TabBar onnew={newTab} />
 
-  <main class="pane" style:--view-size={`${settings.font_size}px`}>
+  <main class="pane" style:--view-size={`${unzoomed(settings.font_size)}px`}>
     {#if ready}
       {#if tabs.length === 0}
         <Welcome onscan={() => newTab("scanner")} />
