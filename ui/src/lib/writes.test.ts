@@ -39,7 +39,9 @@ test("the time zone is written in 15-minute steps, with the DST code", () => {
   assert.equal(decodeProfile(full(0x2a0f), localTimeInformation(-300, 60))?.text, "UTC-05:00, daylight time (+1 h)");
   const now = new Date();
   const { standard, dst } = pcTimeZone(now);
-  assert.equal(standard + dst, -now.getTimezoneOffset());
+  // In UTC getTimezoneOffset is 0, and its minus is -0, which strict equal tells from 0.
+  assert.equal(standard + dst, -now.getTimezoneOffset() + 0);
+  assert.ok(!Object.is(standard, -0) && !Object.is(dst, -0));
   assert.ok(dst >= 0);
 });
 

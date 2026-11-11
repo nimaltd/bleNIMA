@@ -50,8 +50,9 @@ export function pcTimeZone(now: Date): { standard: number; dst: number } {
   // getTimezoneOffset is minutes behind UTC; the larger of January's and July's is standard time.
   const january = new Date(now.getFullYear(), 0, 1).getTimezoneOffset();
   const july = new Date(now.getFullYear(), 6, 1).getTimezoneOffset();
-  const standard = -Math.max(january, july);
-  return { standard, dst: -now.getTimezoneOffset() - standard };
+  // "+ 0" makes UTC's -0 a plain 0.
+  const standard = -Math.max(january, july) + 0;
+  return { standard, dst: -now.getTimezoneOffset() - standard + 0 };
 }
 
 /**
