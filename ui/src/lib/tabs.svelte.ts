@@ -47,7 +47,7 @@ type Workspace = {
 let nextId = 1;
 
 /** The views a device tab has. */
-export type DeviceView = "gatt" | "terminal" | "log" | "tools";
+export type DeviceView = "gatt" | "terminal" | "log" | "tools" | "mcumgr";
 
 /** The views a device simulator tab has, when its parts are shown one at a time. */
 export type SimulatorView = "advertiser" | "server" | "log";

@@ -1,7 +1,8 @@
 // MCUmgr's SMP protocol, as Zephyr and nRF Connect SDK devices speak it over
-// Bluetooth: an 8-byte header, then a CBOR map. Also the MCUboot image header,
-// to show what is about to be uploaded. It has no imports, so its tests run in
-// Node as they are.
+// Bluetooth: an 8-byte header, then a CBOR map. The image group's requests and
+// answers: slots, upload, test, confirm, erase, slot sizes. Also the MCUboot
+// image header, to show what is about to be uploaded. It has no imports, so
+// its tests run in Node as they are.
 
 export type Cbor = number | bigint | string | boolean | null | Uint8Array | Cbor[] | { [key: string]: Cbor };
 
@@ -205,6 +206,18 @@ export class Reassembler {
   }
 }
 
+/** The image group's command IDs. */
+export const IMAGE = { state: 0, upload: 1, erase: 5, slotInfo: 6 } as const;
+
+/** The OS group's command IDs. */
+export const OS = { echo: 0, reset: 5, params: 6 } as const;
+
+/** A CBOR map's entries, or null when it is not a map. */
+function asMap(body: Cbor): { [key: string]: Cbor } | null {
+  if (!body || typeof body !== "object" || Array.isArray(body) || body instanceof Uint8Array) return null;
+  return body as { [key: string]: Cbor };
+}
+
 /** MCUmgr's return codes in words. */
 export function rcText(rc: number): string {
   const codes: Record<number, string> = {
@@ -223,6 +236,125 @@ export function rcText(rc: number): string {
     12: "Unsupported protocol version",
   };
   return codes[rc] ?? `Error ${rc}`;
+}
+
+/** The image group's own error codes, as SMP version 2 answers give them. */
+const IMAGE_ERRORS: Record<number, string> = {
+  1: "Unknown error",
+  2: "Could not read the flash's layout",
+  3: "No image in that slot",
+  4: "The image has no TLVs",
+  5: "The image has an invalid TLV",
+  6: "The image has more than one hash",
+  7: "The image has a TLV of the wrong size",
+  8: "The image has no hash",
+  9: "No free slot",
+  10: "Could not open the flash",
+  11: "Could not read the flash",
+  12: "Could not write the flash",
+  13: "Could not erase the flash",
+  14: "No such slot",
+  15: "Out of memory",
+  16: "The flash is in use already",
+  17: "The flash is not in use",
+  18: "The flash area has no device",
+  19: "Invalid page offset",
+  20: "Invalid offset",
+  21: "Invalid length",
+  22: "Invalid image header",
+  23: "The image header's magic is wrong: it is not an MCUboot image",
+  24: "Invalid hash",
+  25: "Invalid flash address",
+  26: "Could not read the version",
+  27: "The image that runs is newer",
+  28: "An image is pending already",
+  29: "The image's vector table is invalid",
+  30: "The image is too large for its slot",
+  31: "The image's data runs over",
+  32: "The image cannot be confirmed",
+  33: "The image that runs cannot be set to test",
+  34: "The device does not know its active slot",
+};
+
+/**
+ * What went wrong, in words, from an answer: SMP version 1 says it with "rc",
+ * version 2 with "err" and the group it is from. Null when nothing did.
+ */
+export function smpError(body: Cbor): string | null {
+  const map = asMap(body);
+  if (!map) return null;
+  const err = asMap(map.err ?? null);
+  if (err && typeof err.rc === "number" && err.rc !== 0) {
+    const group = Number(err.group ?? -1);
+    const words = group === GROUP.image ? (IMAGE_ERRORS[err.rc] ?? `error ${err.rc}`) : `error ${err.rc}`;
+    return `${words} (group ${group}, rc ${err.rc})`;
+  }
+  if (typeof map.rc === "number" && map.rc !== 0) return `${rcText(map.rc)} (rc ${map.rc})`;
+  return null;
+}
+
+/** What the device's SMP server can take at once, from its MCUmgr parameters. */
+export type McumgrParams = { bufSize: number; bufCount: number };
+
+export function mcumgrParams(body: Cbor): McumgrParams | null {
+  const map = asMap(body);
+  if (!map || typeof map.buf_size !== "number") return null;
+  return { bufSize: map.buf_size, bufCount: typeof map.buf_count === "number" ? map.buf_count : 1 };
+}
+
+/** The sizes of an image's slots, from the image group's slot info. */
+export type ImageSlots = { image: number; slots: { slot: number; size: number }[]; maxImageSize: number | null };
+
+export function slotInfo(body: Cbor): ImageSlots[] {
+  const images = asMap(body)?.images;
+  if (!Array.isArray(images)) return [];
+  return images.map((item) => {
+    const entry = asMap(item) ?? {};
+    const slots = Array.isArray(entry.slots) ? entry.slots : [];
+    return {
+      image: Number(entry.image ?? 0),
+      slots: slots.map((slot) => {
+        const one = asMap(slot) ?? {};
+        return { slot: Number(one.slot ?? 0), size: Number(one.size ?? 0) };
+      }),
+      maxImageSize: typeof entry.max_image_size === "number" ? entry.max_image_size : null,
+    };
+  });
+}
+
+/**
+ * The body of an image erase request. MCUmgr counts the slot over every image:
+ * image 0 has slots 0 and 1, image 1 has 2 and 3.
+ */
+export function eraseBody(image: number, slot: number): { slot: number } {
+  return { slot: image * 2 + slot };
+}
+
+/** The body of an upload request: the first one says the image, its length and hash, and whether only a newer one may go. */
+export function uploadBody(
+  offset: number,
+  data: Uint8Array,
+  first: { image: number; len: number; sha: Uint8Array; upgrade: boolean } | null,
+): Record<string, Cbor> {
+  if (!first) return { off: offset, data };
+  const body: Record<string, Cbor> = { image: first.image, len: first.len, off: offset, sha: first.sha, data };
+  if (first.upgrade) body.upgrade = true;
+  return body;
+}
+
+/** Whether two hashes are the same bytes. */
+export function sameHash(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  return a !== null && b !== null && a.length === b.length && a.every((byte, at) => byte === b[at]);
+}
+
+/** The image that runs now, of an image number. */
+export function activeImage(images: SlotImage[], image: number): SlotImage | undefined {
+  return images.find((entry) => entry.image === image && entry.active);
+}
+
+/** The image waiting in the slot an upload goes to: the one that is not active. */
+export function standbyImage(images: SlotImage[], image: number): SlotImage | undefined {
+  return images.find((entry) => entry.image === image && !entry.active);
 }
 
 /** What the MCUboot header at the start of an image says about it. */
@@ -279,15 +411,22 @@ export function slotImages(body: Cbor): SlotImage[] {
 
 /**
  * How many bytes of image fit in one upload request, so the whole frame fits
- * in one write: the MTU less the ATT header, the SMP header and the CBOR around
- * the data. The first request also carries the image's length and hash.
+ * in one write and in the device's SMP buffer: the smaller of the MTU less the
+ * ATT header and the buffer, less the SMP header and the CBOR around the data.
+ * The first request also carries the image, its length and hash, and the
+ * upgrade flag.
  */
-export function chunkSize(mtu: number, first: boolean, total: number): number {
-  const room = mtu - 3 - 8;
+export function chunkSize(
+  mtu: number,
+  first: boolean,
+  total: number,
+  bufSize = Number.POSITIVE_INFINITY,
+  image = 0,
+  upgrade = false,
+): number {
+  const room = Math.min(mtu - 3, bufSize) - 8;
   const overhead = encodeCbor(
-    first
-      ? { image: 0, len: total, off: 0, sha: new Uint8Array(32), data: new Uint8Array(0) }
-      : { off: total, data: new Uint8Array(0) },
+    uploadBody(first ? 0 : total, new Uint8Array(0), first ? { image, len: total, sha: new Uint8Array(32), upgrade } : null),
   ).length;
   // The data's own CBOR length grows by up to 2 bytes as it gets longer.
   return Math.max(16, room - overhead - 2);

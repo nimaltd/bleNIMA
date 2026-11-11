@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import Chart, { align } from "./Chart.svelte";
-  import FirmwareView from "./FirmwareView.svelte";
   import { PROPERTY, type CharacteristicInfo, type Source } from "./bluetooth";
   import { parseText } from "./format";
   import { isTarget, lostPackets, matches, parseScript, stats, type Stats, type Step } from "./tests";
@@ -10,7 +9,7 @@
   let { tab }: { tab: Tab } = $props();
   const device = $derived(tab.device!);
 
-  type Tool = "throughput" | "latency" | "soak" | "script" | "firmware";
+  type Tool = "throughput" | "latency" | "soak" | "script";
   let tool: Tool = $state("throughput");
 
   const all = $derived(device.services.flatMap((service) => service.characteristics));
@@ -299,13 +298,13 @@ read 'Device Name'
 
 <div class="tools">
   <nav class="menu">
-    {#each [["throughput", "Throughput"], ["latency", "Latency"], ["soak", "Connection soak"], ["script", "Send and expect"], ["firmware", "Firmware update"]] as [id, name] (id)}
+    {#each [["throughput", "Throughput"], ["latency", "Latency"], ["soak", "Connection soak"], ["script", "Send and expect"]] as [id, name] (id)}
       <button class:on={tool === id} onclick={() => (tool = id as Tool)}>{name}</button>
     {/each}
   </nav>
 
   <div class="page">
-    {#if !device.connected && tool !== "firmware"}
+    {#if !device.connected}
       <p class="note">Connect to the device to run a test.</p>
     {/if}
 
@@ -453,8 +452,6 @@ read 'Device Name'
           {/each}
         </div>
       {/if}
-    {:else}
-      <FirmwareView {device} />
     {/if}
   </div>
 </div>

@@ -16,6 +16,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A device simulator's advert can ask for a transmit power, be a Bluetooth 5
   extended advert, say its transmit power in its header, and choose its
   primary and secondary PHYs.
+- MCUmgr has its own view in device tabs, next to Tests, where the device has
+  the SMP service. The image slots show their sizes where the firmware tells
+  them, and a slot that is not active can be erased. An upload goes to the
+  image number picked, and can be only for a newer version. Update does it all
+  in one go: upload, mark to test, reset, wait for the device to come back,
+  check that the new image runs, and confirm it, with each step shown.
 - What the OS or the adapter cannot do is greyed out, saying why: an adapter
   without Bluetooth 5, a Windows without the newer calls, or macOS and Linux,
   which do not let an app choose these.
@@ -31,6 +37,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Starting one stops the one that serves, and says so in its log.
 - The scanner sorts by first heard unless told otherwise, and First heard is
   first in the Sort list.
+- Firmware update is no longer in the Tests view: it is the MCUmgr view, which
+  Tools > Firmware update (MCUmgr) opens.
+- An MCUmgr upload's pieces fit the device's SMP buffer as well as the MTU, as
+  its MCUmgr parameters say, and the first one waits up to 30 s while the
+  device erases the slot. Errors of SMP version 2 are put into words too.
 
 ### Removed
 

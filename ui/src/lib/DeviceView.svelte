@@ -3,6 +3,7 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import DeviceCard from "./DeviceCard.svelte";
+  import FirmwareView from "./FirmwareView.svelte";
   import GattView from "./GattView.svelte";
   import LogView from "./LogView.svelte";
   import TerminalView from "./TerminalView.svelte";
@@ -30,7 +31,14 @@
     { view: "terminal", label: "Terminal", title: "The device as a terminal: NUS or any write and notify pair" },
     { view: "log", label: "Log", title: "Everything that happened, with times" },
     { view: "tools", label: "Tests", title: "Throughput, latency, soak and send-and-expect tests" },
+    { view: "mcumgr", label: "MCUmgr", title: "Firmware update with MCUmgr: the image slots, test, confirm, erase, upload" },
   ];
+
+  /** Why a view cannot be shown for this device, in words; "" when it can. */
+  function viewProblem(view: string): string {
+    if (view === "mcumgr" && device.connected && !device.hasSmp) return "This device has no MCUmgr SMP service";
+    return "";
+  }
 
   function busy(): boolean {
     return device.state === "searching" || device.state === "connecting" || device.state === "discovering";
@@ -106,7 +114,13 @@
     <button class="btn small" onclick={saveLog} title="Save everything in the log to a file">Save log...</button>
     <div class="views" role="group" aria-label="View">
       {#each VIEWS as { view, label, title } (view)}
-        <button class="view" class:on={tab.view === view} {title} onclick={() => tab.setView(view)}>{label}</button>
+        <button
+          class="view"
+          class:on={tab.view === view}
+          title={viewProblem(view) || title}
+          disabled={viewProblem(view) !== "" && tab.view !== view}
+          onclick={() => tab.setView(view)}>{label}</button
+        >
       {/each}
     </div>
   </div>
@@ -132,6 +146,10 @@
     {#if tab.view === "tools"}
       <div class="pane"><ToolsView {tab} /></div>
     {/if}
+    <!-- It stays while another view is shown, so an update goes on. -->
+    <div class="pane" class:hidden={tab.view !== "mcumgr"}>
+      <FirmwareView {device} />
+    </div>
   </div>
 </div>
 
@@ -259,6 +277,10 @@
   .view.on {
     color: var(--on-accent);
     background: var(--accent);
+  }
+
+  .view:disabled {
+    opacity: 0.45;
   }
 
   .body {

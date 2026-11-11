@@ -158,6 +158,7 @@ export function buildMenus(app: AppActions): Menu[] {
         deviceView("Terminal", "terminal", keys("Ctrl+Shift+T", "Cmd+Shift+T")),
         deviceView("Log", "log", keys("Ctrl+Shift+J", "Cmd+Shift+J")),
         deviceView("Tests", "tools"),
+        { ...deviceView("MCUmgr", "mcumgr"), enabled: () => device()?.hasSmp === true },
         null,
         {
           label: "Next tab",
@@ -247,8 +248,8 @@ export function buildMenus(app: AppActions): Menu[] {
         },
         {
           label: "Firmware update (MCUmgr)",
-          enabled: () => device() !== null,
-          run: () => activeTab()?.setView("tools"),
+          enabled: () => device()?.hasSmp === true,
+          run: () => activeTab()?.setView("mcumgr"),
         },
         null,
         { label: SIMULATOR_NAME, run: () => app.newTab("simulator") },

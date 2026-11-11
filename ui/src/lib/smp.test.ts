@@ -2,7 +2,26 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GROUP, OP, Reassembler, chunkSize, decodeCbor, encodeCbor, frame, header, imageInfo, slotImages } from "./smp.ts";
+import {
+  GROUP,
+  OP,
+  Reassembler,
+  activeImage,
+  chunkSize,
+  decodeCbor,
+  encodeCbor,
+  eraseBody,
+  frame,
+  header,
+  imageInfo,
+  mcumgrParams,
+  sameHash,
+  slotImages,
+  slotInfo,
+  smpError,
+  standbyImage,
+  uploadBody,
+} from "./smp.ts";
 
 const hexOf = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(" ");
 
@@ -96,4 +115,105 @@ test("an upload request fits in one write", () => {
       assert.ok(whole <= mtu - 3, `mtu ${mtu} first ${first}: ${whole}`);
     }
   }
+});
+
+test("MCUmgr's errors are put into words, in both SMP versions", () => {
+  assert.equal(smpError({ rc: 0 }), null);
+  assert.equal(smpError({ images: [] }), null);
+  assert.equal(smpError({ rc: 8 }), "Not supported (rc 8)");
+  assert.equal(smpError({ err: { group: 1, rc: 27 } }), "The image that runs is newer (group 1, rc 27)");
+  assert.equal(smpError({ err: { group: 0, rc: 3 } }), "error 3 (group 0, rc 3)");
+});
+
+test("the device's buffer and its slots' sizes are read", () => {
+  assert.deepEqual(mcumgrParams({ buf_size: 384, buf_count: 4 }), { bufSize: 384, bufCount: 4 });
+  assert.equal(mcumgrParams({ rc: 8 }), null);
+  assert.deepEqual(
+    slotInfo({
+      images: [
+        {
+          image: 0,
+          slots: [
+            { slot: 0, size: 491520, upload_image_id: 0 },
+            { slot: 1, size: 491520 },
+          ],
+          max_image_size: 489472,
+        },
+      ],
+    }),
+    [
+      {
+        image: 0,
+        slots: [
+          { slot: 0, size: 491520 },
+          { slot: 1, size: 491520 },
+        ],
+        maxImageSize: 489472,
+      },
+    ],
+  );
+  assert.deepEqual(slotInfo({ rc: 8 }), []);
+});
+
+test("an erase counts the slot over every image", () => {
+  assert.deepEqual(eraseBody(0, 1), { slot: 1 });
+  assert.deepEqual(eraseBody(1, 1), { slot: 3 });
+});
+
+test("the first upload request says the image, its length and hash, and the upgrade flag", () => {
+  const sha = new Uint8Array(32);
+  const data = new Uint8Array([1, 2]);
+  assert.deepEqual(uploadBody(0, data, { image: 1, len: 1000, sha, upgrade: true }), {
+    image: 1,
+    len: 1000,
+    off: 0,
+    sha,
+    data,
+    upgrade: true,
+  });
+  assert.deepEqual(uploadBody(0, data, { image: 0, len: 1000, sha, upgrade: false }), { image: 0, len: 1000, off: 0, sha, data });
+  assert.deepEqual(uploadBody(512, data, null), { off: 512, data });
+});
+
+test("an upload request fits the device's buffer as well as one write", () => {
+  for (const [mtu, buffer] of [
+    [498, 384],
+    [247, 128],
+    [247, 2048],
+  ]) {
+    for (const first of [true, false]) {
+      const size = chunkSize(mtu, first, 300000, buffer, 1, true);
+      const body = uploadBody(
+        first ? 0 : 299999,
+        new Uint8Array(size),
+        first ? { image: 1, len: 300000, sha: new Uint8Array(32), upgrade: true } : null,
+      );
+      const whole = frame(OP.write, GROUP.image, 1, 0, body).length;
+      assert.ok(whole <= Math.min(mtu - 3, buffer), `mtu ${mtu} buffer ${buffer} first ${first}: ${whole}`);
+    }
+  }
+  // A big buffer does not make a write bigger than the MTU.
+  assert.equal(chunkSize(247, false, 300000, 4096), chunkSize(247, false, 300000));
+});
+
+test("the image that runs and the one waiting are found by image number", () => {
+  const running = {
+    image: 0,
+    slot: 0,
+    version: "1.0.0",
+    hash: new Uint8Array([1]),
+    bootable: true,
+    pending: false,
+    confirmed: true,
+    active: true,
+    permanent: false,
+  };
+  const waiting = { ...running, slot: 1, version: "1.1.0", hash: new Uint8Array([2]), confirmed: false, active: false };
+  const images = [running, waiting];
+  assert.equal(activeImage(images, 0), running);
+  assert.equal(standbyImage(images, 0), waiting);
+  assert.equal(activeImage(images, 1), undefined);
+  assert.ok(sameHash(new Uint8Array([2]), waiting.hash));
+  assert.ok(!sameHash(running.hash, waiting.hash));
+  assert.ok(!sameHash(null, waiting.hash));
 });

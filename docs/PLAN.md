@@ -159,12 +159,18 @@ scanner. With no tab open, the welcome page shows, with the roadmap.
 
 ## Firmware update: MCUmgr / SMP
 
-For Zephyr and nRF Connect SDK devices with MCUmgr's SMP service over Bluetooth:
+For Zephyr and nRF Connect SDK devices with MCUmgr's SMP service over Bluetooth, in
+the device tab's MCUmgr view, which shows where the device has SMP:
 
-- The image slots: version, hash, active, confirmed, pending
-- Upload an image, with its MCUboot header's version shown first, progress and speed;
-  each request sized to fit the MTU
-- Test, confirm, reset, echo
+- The image slots: version, hash, active, confirmed, pending, and each slot's size where
+  the firmware tells it (slot info, Zephyr 3.7 and later)
+- Test, confirm, erase a slot that is not active, reset, echo
+- Upload an image, with its MCUboot header's version shown first, progress and speed:
+  to an image number, and only if it is newer when asked. Each request fits one write
+  and the device's SMP buffer, as its MCUmgr parameters say; the first one waits while
+  the device erases the slot
+- Update in one go: upload, mark it to test, reset, wait for the device to come back,
+  check that the new image runs, and confirm it, each step shown
 
 ## Device simulator (Phase 7)
 
@@ -348,6 +354,8 @@ TypeScript modules with no imports, tested by Node as they are.
 
 - [x] SMP and CBOR, with tests
 - [x] Image slots, upload, test, confirm, reset, echo
+- [x] Its own view; erase, slot sizes, image number, only a newer version, the
+  device's buffer, and the update in one go
 - [ ] Tried on a real board
 
 ### Phase 6: pairing and bonds

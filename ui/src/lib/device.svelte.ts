@@ -4,7 +4,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { appearanceName } from "./appearance";
-import { PROPERTY } from "./bluetooth";
+import { PROPERTY, SMP_CHARACTERISTIC, SMP_SERVICE } from "./bluetooth";
 import type { CharacteristicInfo, Command, DeviceEvent, Link, LinkState, ServiceInfo, Source } from "./bluetooth";
 import { decodeDescriptor, descriptorUuid, isCccd, valueFormat, type ValueFormat } from "./descriptors";
 import { hex, show, width, type Format } from "./format";
@@ -107,6 +107,11 @@ export class DeviceState {
       if (found) return found;
     }
     return undefined;
+  }
+
+  /** Whether the device has MCUmgr's SMP service and its characteristic. */
+  get hasSmp(): boolean {
+    return this.characteristic(`${SMP_SERVICE}/${SMP_CHARACTERISTIC}`) !== undefined;
   }
 
   /** A characteristic's name: its user description, its standard name, or its UUID. */
