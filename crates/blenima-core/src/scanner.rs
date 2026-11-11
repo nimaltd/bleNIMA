@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::advert::{self, AdStructure, Beacon, Field};
 use crate::names;
@@ -20,6 +20,18 @@ const GAPS: usize = 32;
 const SHORTEST_GAP_MS: f64 = 15.0;
 /// Gaps longer than this are a device that went away and came back.
 const LONGEST_GAP_MS: f64 = 12_000.0;
+
+/// How the scanner listens: actively, asking each device for its scan
+/// response, or passively, only hearing what is sent; and on the LE Coded PHY,
+/// for long range, as well as on 1M.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScanSetup {
+    /// Only listens: sends no scan requests, so hears no scan responses.
+    pub passive: bool,
+    /// Hears the LE Coded PHY too, where the OS and the adapter can.
+    pub coded: bool,
+}
 
 /// What kind of advertising PDU an advert came in, where the radio says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

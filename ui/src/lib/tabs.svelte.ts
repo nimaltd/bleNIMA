@@ -2,8 +2,10 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { DeviceState } from "./device.svelte";
-import { kindInfo, type TabKind } from "./new-tab";
+import { SCANNER_NAME, SIMULATOR_NAME, type NewTab, type TabKind } from "./new-tab";
+import { reopened } from "./reopen";
 import { ScannerState, type ScanFilter } from "./scanner.svelte";
+import type { ScanSetup } from "./bluetooth";
 import type { ServiceSetup } from "./server";
 import { ServerState } from "./server.svelte";
 import { settings } from "./settings.svelte";
@@ -27,10 +29,12 @@ export type TabSetup = {
   device?: string;
   view?: string;
   filter?: ScanFilter | null;
+  /** How a scanner listens: the same fields as `ScanSetup` in scanner.rs. */
+  scan?: ScanSetup | null;
   favourites?: string[];
   terminal?: TerminalSetup | null;
   formats?: Record<string, string>;
-  /** A Peripheral simulator's GATT server: the same fields as `ServerSetup` in workspace.rs. */
+  /** A device simulator's GATT server: the same fields as `ServerSetup` in workspace.rs. */
   server?: { services: ServiceSetup[] } | null;
 };
 
@@ -45,7 +49,7 @@ let nextId = 1;
 /** The views a device tab has. */
 export type DeviceView = "gatt" | "terminal" | "log" | "tools";
 
-/** The views a Peripheral simulator tab has, when its parts are shown one at a time. */
+/** The views a device simulator tab has, when its parts are shown one at a time. */
 export type SimulatorView = "advertiser" | "server" | "log";
 
 export class Tab {
@@ -64,7 +68,7 @@ export class Tab {
     this.name = setup.name;
     this.view = setup.view ?? "";
     if (setup.kind === "scanner") {
-      this.scanner = new ScannerState(setup.filter ?? null, setup.favourites ?? []);
+      this.scanner = new ScannerState(setup.filter ?? null, setup.favourites ?? [], setup.scan ?? null);
       this.view ||= "list";
     }
     if ((setup.kind === "device" || setup.kind === "terminal") && setup.device) {
@@ -86,12 +90,7 @@ export class Tab {
     return false;
   }
 
-  /** Whether this tab does anything yet, or only says when it comes. */
-  get built(): boolean {
-    return this.scanner !== null || this.device !== null || this.server !== null;
-  }
-
-  /** Starts scanning, connecting, or serving. */
+  /** Starts scanning, connecting, or serving: a device simulator that starts stops the one that serves. */
   start(): void {
     void this.scanner?.start();
     void this.device?.connect();
@@ -121,6 +120,7 @@ export class Tab {
       device: this.device?.device ?? "",
       view: this.view,
       filter: this.scanner ? $state.snapshot(this.scanner.filter) : null,
+      scan: this.scanner ? $state.snapshot(this.scanner.scan) : null,
       favourites: this.scanner ? [...this.scanner.favourites] : [],
       terminal: this.device ? $state.snapshot(this.terminal) : null,
       formats: this.device ? $state.snapshot(this.device.formats) : {},
@@ -146,25 +146,46 @@ export function activeTab(): Tab | undefined {
 export async function loadWorkspace(): Promise<void> {
   const workspace = await invoke<Workspace>("get_workspace");
   loaded = true;
-  if (settings.startup.restore_tabs) {
-    for (const setup of workspace.tabs) {
-      const tab = new Tab(setup);
-      tabs.push(tab);
-      // A scanner scans when it opens; a device tab connects if it was connected.
-      if (tab.scanner && setup.connected) void tab.scanner.start();
-      if (tab.device && setup.connected && settings.startup.reconnect) void tab.device.connect();
-      if (tab.server && setup.connected && settings.startup.reconnect) void tab.start();
+  let active: Tab | undefined;
+  let serving = false;
+  const saved = settings.startup.restore_tabs ? workspace.tabs : [];
+  for (const at of reopened(saved)) {
+    const setup = saved[at];
+    const tab = new Tab(setup);
+    // There is one scanner at most, so it has the one name.
+    if (tab.scanner) tab.name = SCANNER_NAME;
+    if (at === workspace.active) active = tab;
+    tabs.push(tab);
+    // A scanner scans if it was scanning, a device tab connects if it was connected, and one device simulator serves again.
+    if (tab.scanner && setup.connected) void tab.scanner.start();
+    if (tab.device && setup.connected && settings.startup.reconnect) void tab.device.connect();
+    if (tab.server && setup.connected && settings.startup.reconnect && !serving) {
+      serving = true;
+      tab.start();
     }
-    view.active = Math.min(workspace.active, Math.max(0, tabs.length - 1));
-  } else {
-    // The tabs that do not come back are taken out of the file too.
-    changed();
   }
+  view.active = active ? tabs.indexOf(active) : 0;
+  // The tabs that do not come back are taken out of the file too.
+  changed();
 }
 
-/** Opens a new tab of a kind, named after it, and brings it in front. A scanner starts scanning. */
-export function newTab(kind: TabKind): Tab {
-  const tab = new Tab({ name: freeName(kindInfo(kind).label), kind, connected: false });
+/** Whether the scanner is open: there is one at most. */
+export function hasScanner(): boolean {
+  return tabs.some((tab) => tab.scanner !== null);
+}
+
+/**
+ * Opens a new scanner or device simulator tab, and brings it in front. A
+ * scanner starts scanning; when one is open already, it is brought in front.
+ */
+export function newTab(kind: NewTab["kind"]): Tab {
+  const scanner = kind === "scanner" ? tabs.find((tab) => tab.scanner !== null) : undefined;
+  if (scanner) {
+    showTab(tabs.indexOf(scanner));
+    return scanner;
+  }
+  const name = kind === "scanner" ? SCANNER_NAME : freeName(SIMULATOR_NAME);
+  const tab = new Tab({ name, kind, connected: false });
   tabs.push(tab);
   showTab(tabs.length - 1);
   if (tab.scanner) tab.start();

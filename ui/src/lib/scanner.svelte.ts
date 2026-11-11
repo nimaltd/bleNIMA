@@ -2,7 +2,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { SvelteMap } from "svelte/reactivity";
-import type { Changes, DeviceDetails, DeviceRow } from "./bluetooth";
+import type { Changes, DeviceDetails, DeviceRow, ScanSetup } from "./bluetooth";
 
 /** How many RSSI readings a device keeps in the UI, for its plot. */
 const RSSI_KEPT = 3000;
@@ -13,7 +13,8 @@ export type ScanFilter = {
   only_named: boolean;
   only_connectable: boolean;
   only_favourites: boolean;
-  sort: "rssi" | "name" | "last" | "first";
+  /** First heard, unless another is chosen: the list keeps its order as devices come. */
+  sort: "first" | "rssi" | "name" | "last";
 };
 
 export const DEFAULT_FILTER: ScanFilter = {
@@ -22,7 +23,7 @@ export const DEFAULT_FILTER: ScanFilter = {
   only_named: false,
   only_connectable: false,
   only_favourites: false,
-  sort: "rssi",
+  sort: "first",
 };
 
 export class ScannerState {
@@ -41,14 +42,29 @@ export class ScannerState {
   selected: string | null = $state(null);
   filter: ScanFilter = $state({ ...DEFAULT_FILTER });
   favourites: string[] = $state([]);
+  /** How it listens: passively or not, and on the Coded PHY. */
+  scan: ScanSetup = $state({ passive: false, coded: false });
   /** When the scan started, by the wall clock, to say how long ago a device was heard. */
   startedAt = Date.now();
   private lastCount = 0;
   private lastTime = Date.now();
 
-  constructor(filter: Partial<ScanFilter> | null, favourites: string[]) {
+  constructor(filter: Partial<ScanFilter> | null, favourites: string[], scan: Partial<ScanSetup> | null = null) {
     Object.assign(this.filter, filter ?? {});
     this.favourites = [...favourites];
+    Object.assign(this.scan, scan ?? {});
+  }
+
+  /** Listens another way; a scan that runs starts again so. */
+  async setScan(scan: ScanSetup): Promise<void> {
+    this.scan = { ...scan };
+    if (this.running && this.id !== null) {
+      try {
+        await invoke("scan_run", { id: this.id, on: true, events: this.newChannel(), scan: $state.snapshot(this.scan) });
+      } catch (error) {
+        this.problem = String(error);
+      }
+    }
   }
 
   private newChannel(): Channel<Changes> {
@@ -98,9 +114,9 @@ export class ScannerState {
     try {
       if (this.id === null) {
         this.startedAt = Date.now();
-        this.id = await invoke<number>("scan_open", { events: this.newChannel() });
+        this.id = await invoke<number>("scan_open", { events: this.newChannel(), scan: $state.snapshot(this.scan) });
       } else {
-        await invoke("scan_run", { id: this.id, on: true, events: this.newChannel() });
+        await invoke("scan_run", { id: this.id, on: true, events: this.newChannel(), scan: $state.snapshot(this.scan) });
       }
       this.running = true;
     } catch (error) {

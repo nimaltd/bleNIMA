@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { LEGACY_MAX, advertLength, eddystoneUrl, ibeacon, type Structure } from "./advertise";
+  import { radioInfo, type AdvertOptions, type Phy, type RadioInfo } from "./bluetooth";
   import { hex, parseHex } from "./format";
 
   type Preset = "ibeacon" | "eddystone" | "manufacturer" | "custom";
@@ -21,6 +22,38 @@
   let status = $state("Not advertising");
   let problem = $state("");
   let timer: ReturnType<typeof setInterval> | undefined;
+
+  // What the advert is sent with, where the OS and the adapter let an app choose.
+  let txPower: number | null = $state(null);
+  let extended = $state(false);
+  let includeTxPower = $state(false);
+  let primaryPhy: Phy = $state("1m");
+  let secondaryPhy: Phy = $state("1m");
+  /** What the radio can do here: what it cannot is greyed out, with why. */
+  let radio: RadioInfo | null = $state(null);
+  onMount(() => {
+    radioInfo()
+      .then((info) => (radio = info))
+      .catch(() => {});
+  });
+
+  /** Why each of the options is greyed out here, once each. */
+  const reasons = $derived.by(() => {
+    const info = radio as RadioInfo | null;
+    return [...new Set([info?.tx_power_problem, info?.extended_problem, info?.advert_phy_problem].filter((reason) => !!reason))];
+  });
+
+  const options: AdvertOptions = $derived.by(() => {
+    const isExtended = extended && !radio?.extended_problem;
+    const phys = isExtended && !radio?.advert_phy_problem;
+    return {
+      tx_power: radio?.tx_power_problem || txPower === null ? null : Math.round(txPower),
+      include_tx_power: isExtended && includeTxPower,
+      extended: isExtended,
+      primary_phy: phys ? primaryPhy : "1m",
+      secondary_phy: phys ? secondaryPhy : "1m",
+    };
+  });
 
   /** The AD structures to send, or what is wrong with what was typed. */
   const structures: Structure[] | string = $derived.by(() => {
@@ -58,7 +91,7 @@
     if (typeof structures === "string") return;
     problem = "";
     try {
-      id = await invoke<number>("advertise_start", { structures });
+      id = await invoke<number>("advertise_start", { structures, options });
       timer = setInterval(async () => {
         if (id !== null) status = await invoke<string>("advertise_status", { id });
       }, 1000);
@@ -133,14 +166,67 @@
     {/if}
   </fieldset>
 
+  <h3>Sent with</h3>
+  <fieldset disabled={id !== null}>
+    <div class="grid">
+      <label class="dlg-label" title={radio?.tx_power_problem ?? "The transmit power asked for; empty for the OS's own"}>
+        Tx power, dBm
+        <input
+          class="field mono"
+          type="number"
+          min="-127"
+          max="20"
+          placeholder="The OS's own"
+          bind:value={txPower}
+          disabled={!!radio?.tx_power_problem}
+        />
+      </label>
+      <label class="dlg-label" title={radio?.advert_phy_problem ?? "The PHY an extended advert starts on"}>
+        Primary PHY
+        <select class="field" bind:value={primaryPhy} disabled={!!radio?.advert_phy_problem || !extended}>
+          <option value="1m">1M</option>
+          <option value="coded" disabled={radio?.phy_coded === false}>Coded</option>
+        </select>
+      </label>
+      <label class="dlg-label" title={radio?.advert_phy_problem ?? "The PHY an extended advert's data goes on"}>
+        Secondary PHY
+        <select class="field" bind:value={secondaryPhy} disabled={!!radio?.advert_phy_problem || !extended}>
+          <option value="1m">1M</option>
+          <option value="2m" disabled={radio?.phy_2m === false}>2M</option>
+          <option value="coded" disabled={radio?.phy_coded === false}>Coded</option>
+        </select>
+      </label>
+    </div>
+    <div class="checks">
+      <label class="check" class:off={!!radio?.extended_problem} title={radio?.extended_problem ?? "A Bluetooth 5 extended advert: longer, and on other PHYs"}>
+        <input type="checkbox" bind:checked={extended} disabled={!!radio?.extended_problem} /> Extended advert
+      </label>
+      <label
+        class="check"
+        class:off={!!radio?.extended_problem || !extended}
+        title={radio?.extended_problem ?? "Says the transmit power in the extended advert's header"}
+      >
+        <input type="checkbox" bind:checked={includeTxPower} disabled={!!radio?.extended_problem || !extended} /> Tx power in the
+        header
+      </label>
+    </div>
+    {#each reasons as reason (reason)}
+      <p class="muted">{reason}.</p>
+    {/each}
+  </fieldset>
+
   <h3>On the air</h3>
   {#if typeof structures === "string"}
     <p class="bad">{structures}</p>
   {:else}
     <p class="mono bytes">{hex(bytes)}</p>
-    <p class="muted" class:bad={advertLength(structures) > LEGACY_MAX}>
-      {advertLength(structures)} of {LEGACY_MAX} bytes{advertLength(structures) > LEGACY_MAX ? ": too long for a legacy advert" : ""}
-    </p>
+    {#if options.extended}
+      <p class="muted">{advertLength(structures)} bytes, in an extended advert</p>
+    {:else}
+      <p class="muted" class:bad={advertLength(structures) > LEGACY_MAX}>
+        {advertLength(structures)} of {LEGACY_MAX} bytes{advertLength(structures) > LEGACY_MAX ? ": too long for a legacy advert" : ""}
+      </p>
+    {/if}
   {/if}
   {#if problem}<p class="bad">{problem}</p>{/if}
 </div>
@@ -225,6 +311,24 @@
 
   .wide {
     grid-column: span 2;
+  }
+
+  .checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 10px 0;
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+  }
+
+  .check.off {
+    opacity: 0.5;
   }
 
   .custom .wide {

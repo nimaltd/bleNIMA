@@ -27,6 +27,38 @@ impl AdStructure {
     }
 }
 
+/// A PHY an extended advert is sent on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Phy {
+    /// LE 1M, which every Bluetooth LE radio has.
+    #[default]
+    #[serde(rename = "1m")]
+    OneM,
+    /// LE 2M, twice as fast, Bluetooth 5.
+    #[serde(rename = "2m")]
+    TwoM,
+    /// LE Coded, for long range, Bluetooth 5.
+    #[serde(rename = "coded")]
+    Coded,
+}
+
+/// What an advert is sent with besides its AD structures, where the OS and the
+/// adapter let an app choose.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AdvertOptions {
+    /// The transmit power asked for, in dBm; none for the OS's own.
+    pub tx_power: Option<i16>,
+    /// Says the transmit power in an extended advert's header.
+    pub include_tx_power: bool,
+    /// A Bluetooth 5 extended advert: longer, and on the PHYs below.
+    pub extended: bool,
+    /// The PHY an extended advert starts on: 1M or Coded.
+    pub primary_phy: Phy,
+    /// The PHY an extended advert's data goes on: 1M, 2M or Coded.
+    pub secondary_phy: Phy,
+}
+
 /// AD types that the decoding and the device list use.
 pub mod ad {
     pub const FLAGS: u8 = 0x01;
@@ -763,5 +795,21 @@ mod tests {
         // Only a shortened name: it is the name.
         let summary = summarize(&response);
         assert_eq!(summary.name.as_deref(), Some("nrf"));
+    }
+
+    #[test]
+    fn advert_options_come_from_the_ui_as_json() {
+        let options: AdvertOptions = serde_json::from_str(
+            r#"{"tx_power":-4,"include_tx_power":true,"extended":true,"primary_phy":"coded","secondary_phy":"2m"}"#,
+        )
+        .unwrap();
+        assert_eq!(options.tx_power, Some(-4));
+        assert!(options.include_tx_power && options.extended);
+        assert_eq!(options.primary_phy, Phy::Coded);
+        assert_eq!(options.secondary_phy, Phy::TwoM);
+        // Nothing chosen is a legacy advert at the OS's own power, on 1M.
+        let plain: AdvertOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(plain, AdvertOptions::default());
+        assert_eq!(plain.primary_phy, Phy::OneM);
     }
 }

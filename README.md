@@ -32,7 +32,8 @@ It uses only the computer's own Bluetooth, with no dongle. What changed is in
   expect scripts with a pass or fail report
 - **Firmware update:** MCUmgr / SMP for Zephyr and nRF Connect SDK devices
 - **Pairing:** pair, unpair and the bonded devices, on Windows
-- **Next:** a peripheral simulator, and Mesh through a GATT proxy
+- **Device simulator:** bleNIMA as a device, an advertiser and a GATT server, on Windows
+- **Next:** Mesh through a GATT proxy
 
 What the OS does not let an app do, such as choosing the PHY, bleNIMA says so in the app.
 

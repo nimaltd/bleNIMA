@@ -1,7 +1,5 @@
 // How a tab's state is shown: a colored dot and a few words.
 
-import { kindInfo } from "./new-tab";
-import { phaseName } from "./roadmap";
 import type { Tab } from "./tabs.svelte";
 
 export type Look = "connected" | "waiting" | "problem" | "stopped";
@@ -38,7 +36,5 @@ export function stateText(tab: Tab): string {
   }
   if (tab.device) return tab.device.stateText;
   if (tab.server) return tab.server.stateText;
-  if (tab.kind === "device" || tab.kind === "terminal") return "Open a device from a scanner tab";
-  const { phase } = kindInfo(tab.kind);
-  return `Comes in Phase ${phase} of the roadmap, ${phaseName(phase)}`;
+  return "";
 }

@@ -111,7 +111,7 @@
     </label>
   </div>
 
-  <h2 class="dlg-section">Peripheral simulator</h2>
+  <h2 class="dlg-section">Device simulator</h2>
   <div class="dlg-grid">
     <label class="dlg-label">
       Layout
@@ -123,7 +123,7 @@
     </label>
   </div>
   <p class="dlg-hint">
-    How a Peripheral simulator tab shows its advertiser, GATT server and log. A GATT server that ran when bleNIMA closed
+    How a device simulator tab shows its advertiser, GATT server and log. A GATT server that ran when bleNIMA closed
     starts again with "Connect the tabs that were connected".
   </p>
 

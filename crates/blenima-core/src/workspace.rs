@@ -6,6 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::scanner::ScanSetup;
 use crate::tomlfile;
 
 const HEADER: &str =
@@ -77,7 +78,7 @@ pub struct ScanFilter {
     pub only_named: bool,
     pub only_connectable: bool,
     pub only_favourites: bool,
-    /// "rssi", "name", "last" or "first".
+    /// "first" (first heard, the default), "rssi", "name" or "last".
     pub sort: String,
 }
 
@@ -89,12 +90,12 @@ impl Default for ScanFilter {
             only_named: false,
             only_connectable: false,
             only_favourites: false,
-            sort: "rssi".into(),
+            sort: "first".into(),
         }
     }
 }
 
-/// A characteristic of a Peripheral simulator's GATT server, as it is saved.
+/// A characteristic of a device simulator's GATT server, as it is saved.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServedCharacteristic {
@@ -115,7 +116,7 @@ pub struct ServedCharacteristic {
     pub live: bool,
 }
 
-/// A service of a Peripheral simulator's GATT server, as it is saved.
+/// A service of a device simulator's GATT server, as it is saved.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServedService {
@@ -129,7 +130,7 @@ pub struct ServedService {
     pub characteristics: Vec<ServedCharacteristic>,
 }
 
-/// A Peripheral simulator's GATT server, as it is saved.
+/// A device simulator's GATT server, as it is saved.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerSetup {
@@ -153,6 +154,9 @@ pub struct TabSetup {
     /// A scanner's filters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<ScanFilter>,
+    /// How a scanner listens: passively or not, and on the Coded PHY.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scan: Option<ScanSetup>,
     /// The devices a scanner keeps at the top and plots.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub favourites: Vec<String>,
@@ -162,7 +166,7 @@ pub struct TabSetup {
     /// The format each characteristic's value is shown in, by key: "u16", "utf8".
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub formats: std::collections::BTreeMap<String, String>,
-    /// A Peripheral simulator's GATT server.
+    /// A device simulator's GATT server.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server: Option<ServerSetup>,
 }
@@ -297,6 +301,10 @@ mod tests {
                         text: "nrf".into(),
                         min_rssi: -70,
                         ..ScanFilter::default()
+                    }),
+                    scan: Some(ScanSetup {
+                        passive: true,
+                        coded: false,
                     }),
                     favourites: vec!["C3:1A:4B:00:12:9F".into()],
                     ..tab("Near", TabKind::Scanner)

@@ -2,9 +2,9 @@
 // already, greyed out with their phase, so the menus show where the app is going.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { NEW_TABS, type TabKind } from "./new-tab";
+import { NEW_TABS, SIMULATOR_NAME, type NewTab } from "./new-tab";
 import type { Command } from "./palette";
-import { GITHUB, PLAN, isBuilt } from "./roadmap";
+import { GITHUB, PLAN } from "./roadmap";
 import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_MAX,
@@ -17,7 +17,7 @@ import {
   type ThemeChoice,
 } from "./settings.svelte";
 import { isMac, keys, matches } from "./shortcuts";
-import { activeTab, closeTab, showTab, tabs, view } from "./tabs.svelte";
+import { activeTab, closeTab, hasScanner, showTab, tabs, view } from "./tabs.svelte";
 
 export type Item = {
   label: string;
@@ -38,8 +38,8 @@ export type Menu = { title: string; items: (Item | string | null)[] };
 export type AppActions = {
   about(): void;
   exit(): void;
-  /** Opens a new tab of a kind. */
-  newTab(kind: TabKind): void;
+  /** Opens a new scanner or device simulator tab. */
+  newTab(kind: NewTab["kind"]): void;
   /** Opens the app's settings. */
   settings(): void;
   /** Opens the command palette. */
@@ -83,13 +83,13 @@ export function buildMenus(app: AppActions): Menu[] {
     {
       title: "File",
       items: [
-        // The same as the + button's menu.
+        // The same as the + button's menu. Device and terminal tabs open from the scanner.
         "New tab",
-        // Each opens already, and says when it comes until its phase is built.
-        ...NEW_TABS.map(({ kind, label, shortcut, phase }) => ({
+        ...NEW_TABS.map(({ kind, label, shortcut }) => ({
           label,
           shortcut,
-          hint: isBuilt(phase) ? undefined : `Phase ${phase}`,
+          // There is one scanner at most.
+          enabled: () => kind !== "scanner" || !hasScanner(),
           run: () => app.newTab(kind),
         })),
         null,
@@ -251,7 +251,7 @@ export function buildMenus(app: AppActions): Menu[] {
           run: () => activeTab()?.setView("tools"),
         },
         null,
-        { label: "Peripheral simulator", run: () => app.newTab("simulator") },
+        { label: SIMULATOR_NAME, run: () => app.newTab("simulator") },
         { label: "Mesh", phase: 8 },
       ],
     },

@@ -56,21 +56,25 @@ the reason, what the OS does not let an app do.
 | Connection parameters | read, and asked for as a preset | no | no |
 | Pairing and bonds from bleNIMA | yes; Windows asks for the passkey itself | pair in the OS's settings | pair in the OS's settings |
 | As a peripheral: advertising and a GATT server | yes, where the adapter can be a peripheral | not yet | not yet |
-| PHY, data length, own address, raw HCI | no: the OS decides | no | no |
+| A connection's PHY | read, and told as it changes, on a newer Windows 11 | no | no |
+| Scanning passively, and on the LE Coded PHY | yes; Coded needs a Bluetooth 5 adapter and a newer Windows 11 | no | not yet |
+| An advert's transmit power, extended adverts and their PHYs | yes; extended needs a Bluetooth 5 adapter | no | not yet |
+| Choosing a connection's PHY, data length, own address, raw HCI | no: the OS decides | no | no |
 
 ### Not possible with the computer's own Bluetooth
 
 These need access to the radio's controller that no desktop OS gives an app, so they are
 out of bleNIMA's plan: an air sniffer, direction finding (AoA/AoD), Channel Sounding,
-LE Audio streams, choosing the PHY or the data length, every SMP pairing mode one by one,
-and an HCI console.
+LE Audio streams, choosing a connection's PHY or the data length, every SMP pairing mode
+one by one, and an HCI console.
 
 ---
 
 ## The main window
 
-terNIMA's window, with Bluetooth tabs. The + button opens a new tab: Scanner, Device,
-Terminal, Peripheral simulator or Mesh.
+terNIMA's window, with Bluetooth tabs. File > New tab and the + button open a Scanner,
+while none is open, or a new Device simulator; device and terminal tabs open from the
+scanner. With no tab open, the welcome page shows, with the roadmap.
 
 ```
 +-------------------------------------------------------------------------+
@@ -94,12 +98,14 @@ Terminal, Peripheral simulator or Mesh.
 
 ## Scanner
 
+- One scanner at most, as the computer has one radio that hears the same adverts for
+  all: New tab > Scanner is greyed out while it is open
 - A live list: name, address and its kind (public, random static, resolvable private,
   non-resolvable), RSSI with a bar, connectable or not, adverts counted, the advertising
   interval as heard, what it says (company, beacon, service), and when it was last heard
 - Filters: text in the name, address, company or services, lowest RSSI, only named, only
-  connectable, only favourites. Sort by RSSI, name, last or first heard. Favourites (★)
-  stay at the top
+  connectable, only favourites. Sort by first heard (the default), RSSI, name or last
+  heard. Favourites (★) stay at the top
 - The details of a device: every AD structure by type in words and in bytes, the advert
   and the scan response apart, beacons (iBeacon, Eddystone UID, URL, TLM and EID,
   AltBeacon) read out, and the raw bytes
@@ -160,7 +166,7 @@ For Zephyr and nRF Connect SDK devices with MCUmgr's SMP service over Bluetooth:
   each request sized to fit the MTU
 - Test, confirm, reset, echo
 
-## Peripheral simulator (Phase 7)
+## Device simulator (Phase 7)
 
 bleNIMA as a device, to test a phone app or a central's firmware:
 
@@ -180,6 +186,9 @@ bleNIMA as a device, to test a phone app or a central's firmware:
   greys the server out with the reason where it cannot
 - The tab shows its advertiser, GATT server and log one at a time, on one page, or in two
   columns, as Settings says. The GATT server's services are kept with the tab
+- New tab > Device simulator makes one; there can be many, but one serves at a time:
+  they would share the computer's one GATT table and its advert, so a phone would see
+  them all as one device. Starting one stops the one that serves
 
 ## Mesh over GATT proxy (Phase 8)
 
@@ -347,7 +356,7 @@ TypeScript modules with no imports, tested by Node as they are.
 - [x] The bonded devices, with Connect and Unpair
 - [ ] Linux through a BlueZ agent
 
-### Phase 7: peripheral simulator
+### Phase 7: device simulator
 
 - [x] Advertiser on Windows: iBeacon, Eddystone URL, manufacturer data, or AD structures
   by hand, with the bytes on the air and what Windows refused

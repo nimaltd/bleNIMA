@@ -21,6 +21,10 @@
       .catch(() => {});
   });
 
+  /** Why the PHY cannot be chosen here, and how a device gets 2M or Coded all the same. */
+  const PHY_CHOICE =
+    "No OS lets an app choose it: the device's firmware asks for 2M or Coded once connected, as Zephyr's bt_conn_le_phy_update() does, and the OS agrees where its adapter has that PHY";
+
   const VIEWS = [
     { view: "gatt", label: "GATT", title: "Services and characteristics: read, write, notify, plot" },
     { view: "terminal", label: "Terminal", title: "The device as a terminal: NUS or any write and notify pair" },
@@ -51,6 +55,13 @@
     {#if device.connected && device.link}
       <span class="separator"></span>
       <span class="fact" title="The ATT MTU the OS agreed with the device">MTU <b class="mono">{device.link.mtu}</b></span>
+      <span
+        class="fact"
+        class:unknown={!device.phy}
+        title={`${device.phy ? "The PHY the connection sends on, and the one it receives on, as the OS tells them" : (radio?.phy_problem ?? "The OS has not told this connection's PHY")}. ${PHY_CHOICE}.`}
+      >
+        PHY <b class="mono">{device.phy ? (device.phy.tx === device.phy.rx ? device.phy.tx : `${device.phy.tx} / ${device.phy.rx}`) : "—"}</b>
+      </span>
       {#if device.link.interval_ms !== null}
         <span class="fact" title="Connection interval, latency and supervision timeout">
           <b class="mono">{device.link.interval_ms} ms</b> / <b class="mono">{device.link.latency}</b> /
@@ -195,6 +206,10 @@
   .fact b {
     font-weight: 500;
     color: var(--text);
+  }
+
+  .fact.unknown b {
+    color: var(--muted);
   }
 
   .separator {

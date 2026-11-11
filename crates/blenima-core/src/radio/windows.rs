@@ -3,18 +3,19 @@
 //! Hearing adverts through WinRT's advertisement watcher, which gives every
 //! advert as it came: its AD structures as sent, its PDU kind, its address type
 //! and whether it is a scan response; btleplug's own watcher keeps only some of
-//! it. Pairing, unpairing and the list of bonds. And bleNIMA as a peripheral:
-//! advertising, and a GATT server through WinRT's GattServiceProvider.
+//! it. Pairing, unpairing and the list of bonds. A connection's PHY. And
+//! bleNIMA as a peripheral: advertising, and a GATT server through WinRT's
+//! GattServiceProvider.
 
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use tokio::sync::mpsc::UnboundedSender;
 use windows::Devices::Bluetooth::Advertisement::{
-    BluetoothLEAdvertisementDataSection, BluetoothLEAdvertisementPublisher,
-    BluetoothLEAdvertisementPublisherStatus, BluetoothLEAdvertisementReceivedEventArgs,
-    BluetoothLEAdvertisementType, BluetoothLEAdvertisementWatcher, BluetoothLEManufacturerData,
-    BluetoothLEScanningMode,
+    BluetoothLEAdvertisementDataSection, BluetoothLEAdvertisementPhyType,
+    BluetoothLEAdvertisementPublisher, BluetoothLEAdvertisementPublisherStatus,
+    BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementType,
+    BluetoothLEAdvertisementWatcher, BluetoothLEManufacturerData, BluetoothLEScanningMode,
 };
 use windows::Devices::Bluetooth::GenericAttributeProfile::{
     GattCharacteristicProperties, GattCommunicationStatus, GattLocalCharacteristic,
@@ -25,21 +26,22 @@ use windows::Devices::Bluetooth::GenericAttributeProfile::{
     GattWriteRequestedEventArgs,
 };
 use windows::Devices::Bluetooth::{
-    BluetoothAdapter, BluetoothAddressType, BluetoothError, BluetoothLEDevice,
+    BluetoothAdapter, BluetoothAddressType, BluetoothError, BluetoothLEConnectionPhyInfo,
+    BluetoothLEDevice,
 };
 use windows::Devices::Enumeration::{
     DeviceInformation, DevicePairingProtectionLevel, DevicePairingResultStatus,
     DeviceUnpairingResultStatus,
 };
-use windows::Foundation::TypedEventHandler;
+use windows::Foundation::{IReference, PropertyValue, TypedEventHandler};
 use windows::Storage::Streams::{DataReader, DataWriter, IBuffer};
-use windows::core::{GUID, HSTRING, IInspectable, Ref};
+use windows::core::{GUID, HSTRING, IInspectable, Interface, Ref};
 
-use crate::advert::{self, AdStructure, ad};
+use crate::advert::{self, AdStructure, AdvertOptions, Phy, ad};
 use crate::gatt;
 use crate::names::Kind;
 use crate::radio::Bond;
-use crate::scanner::{AddressKind, AdvKind, Advert};
+use crate::scanner::{AddressKind, AdvKind, Advert, ScanSetup};
 use crate::server::{self, Place, ServerEvent, Service, VALUE_MAX, Values, property};
 
 /// The 48 bits of "C3:1A:4B:00:12:9F", as Windows takes an address.
@@ -196,16 +198,29 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    /// Starts an active scan, handing every advert to `sink`, timed from `started`.
-    pub fn start(sink: UnboundedSender<Advert>, started: Instant) -> Result<Self, String> {
+    /// Starts a scan, active or passive as `setup` says, handing every advert
+    /// to `sink`, timed from `started`.
+    pub fn start(
+        sink: UnboundedSender<Advert>,
+        started: Instant,
+        setup: ScanSetup,
+    ) -> Result<Self, String> {
         let problem =
             |error: windows::core::Error| format!("Windows could not scan: {}", error.message());
         let watcher = BluetoothLEAdvertisementWatcher::new().map_err(problem)?;
-        watcher
-            .SetScanningMode(BluetoothLEScanningMode::Active)
-            .map_err(problem)?;
+        let mode = if setup.passive {
+            BluetoothLEScanningMode::Passive
+        } else {
+            BluetoothLEScanningMode::Active
+        };
+        watcher.SetScanningMode(mode).map_err(problem)?;
         // Bluetooth 5 adverts too, where the adapter and Windows can.
         let _ = watcher.SetAllowExtendedAdvertisements(true);
+        if setup.coded {
+            watcher.SetUseCodedPhy(true).map_err(|error| {
+                format!("Windows could not scan the Coded PHY: {}", winrt(error))
+            })?;
+        }
         let handler = TypedEventHandler::new(
             move |_watcher, args: Ref<BluetoothLEAdvertisementReceivedEventArgs>| {
                 if let Ok(args) = args.ok()
@@ -312,11 +327,12 @@ pub struct Publisher {
 }
 
 impl Publisher {
-    /// Starts advertising these AD structures. Windows puts some in the advert
-    /// itself and refuses others, such as Flags and the name: each refused one
-    /// is said, by its type.
-    pub fn start(structures: &[AdStructure]) -> Result<Self, String> {
+    /// Starts advertising these AD structures, with `options`. Windows puts
+    /// some in the advert itself and refuses others, such as Flags and the
+    /// name: each refused one is said, by its type.
+    pub fn start(structures: &[AdStructure], options: &AdvertOptions) -> Result<Self, String> {
         let publisher = BluetoothLEAdvertisementPublisher::new().map_err(winrt)?;
+        set_options(&publisher, options)?;
         let advert = publisher.Advertisement().map_err(winrt)?;
         for structure in structures {
             let refused = |error: windows::core::Error| {
@@ -424,6 +440,167 @@ impl Drop for Publisher {
 
 /// Why this computer's Bluetooth adapter cannot be a GATT server, in words;
 /// nothing when it can. Blocks while Windows answers.
+/// Sets what an advert is sent with besides its AD structures.
+fn set_options(
+    publisher: &BluetoothLEAdvertisementPublisher,
+    options: &AdvertOptions,
+) -> Result<(), String> {
+    let refused = |what: &'static str| {
+        move |error: windows::core::Error| format!("Windows could not set {what}: {}", winrt(error))
+    };
+    if let Some(dbm) = options.tx_power {
+        let value = PropertyValue::CreateInt16(dbm)
+            .and_then(|value| value.cast::<IReference<i16>>())
+            .map_err(refused("the transmit power"))?;
+        publisher
+            .SetPreferredTransmitPowerLevelInDBm(&value)
+            .map_err(refused("the transmit power"))?;
+    }
+    if options.extended {
+        publisher
+            .SetUseExtendedAdvertisement(true)
+            .map_err(refused("an extended advert"))?;
+        if options.include_tx_power {
+            publisher
+                .SetIncludeTransmitPowerLevel(true)
+                .map_err(refused("the transmit power in the advert"))?;
+        }
+        // 1M is what Windows uses unless told, so asking for it needs no newer Windows.
+        if options.primary_phy != Phy::OneM {
+            publisher
+                .SetPrimaryPhy(phy_type(options.primary_phy))
+                .map_err(refused("the primary PHY"))?;
+        }
+        if options.secondary_phy != Phy::OneM {
+            publisher
+                .SetSecondaryPhy(phy_type(options.secondary_phy))
+                .map_err(refused("the secondary PHY"))?;
+        }
+    }
+    Ok(())
+}
+
+fn phy_type(phy: Phy) -> BluetoothLEAdvertisementPhyType {
+    match phy {
+        Phy::OneM => BluetoothLEAdvertisementPhyType::Uncoded1MPhy,
+        Phy::TwoM => BluetoothLEAdvertisementPhyType::Uncoded2MPhy,
+        Phy::Coded => BluetoothLEAdvertisementPhyType::CodedPhy,
+    }
+}
+
+/// What this Windows and its Bluetooth adapter can do besides the basics.
+/// Each is asked once; an older Windows has no way to say some of them.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Features {
+    /// The adapter has the LE 2M PHY; none where Windows cannot say.
+    pub phy_2m: Option<bool>,
+    /// The adapter has the LE Coded PHY; none where Windows cannot say.
+    pub phy_coded: Option<bool>,
+    /// The adapter can send extended adverts; none where Windows cannot say.
+    pub extended_adverts: Option<bool>,
+    /// Windows can choose the PHYs it scans on.
+    pub scan_phys: bool,
+    /// Windows can set an advert's transmit power.
+    pub advert_tx_power: bool,
+    /// Windows can send an extended advert.
+    pub advert_extended: bool,
+    /// Windows can choose an extended advert's PHYs.
+    pub advert_phys: bool,
+}
+
+/// Asks Windows what it and the adapter can do. Blocks: call it off the async runtime.
+pub fn features() -> Features {
+    let adapter = BluetoothAdapter::GetDefaultAsync()
+        .and_then(|operation| operation.join())
+        .ok();
+    let watcher = BluetoothLEAdvertisementWatcher::new().ok();
+    let publisher = BluetoothLEAdvertisementPublisher::new().ok();
+    // A property that this Windows cannot read is one it does not have.
+    Features {
+        phy_2m: adapter
+            .as_ref()
+            .and_then(|adapter| adapter.IsLowEnergyUncoded2MPhySupported().ok()),
+        phy_coded: adapter
+            .as_ref()
+            .and_then(|adapter| adapter.IsLowEnergyCodedPhySupported().ok()),
+        extended_adverts: adapter
+            .as_ref()
+            .and_then(|adapter| adapter.IsExtendedAdvertisingSupported().ok()),
+        scan_phys: watcher
+            .as_ref()
+            .is_some_and(|watcher| watcher.UseCodedPhy().is_ok()),
+        advert_tx_power: publisher
+            .as_ref()
+            .is_some_and(|publisher| publisher.IncludeTransmitPowerLevel().is_ok()),
+        advert_extended: publisher
+            .as_ref()
+            .is_some_and(|publisher| publisher.UseExtendedAdvertisement().is_ok()),
+        advert_phys: publisher
+            .as_ref()
+            .is_some_and(|publisher| publisher.PrimaryPhy().is_ok()),
+    }
+}
+
+/// "1M", "2M" or "Coded".
+fn phy_name(info: &BluetoothLEConnectionPhyInfo) -> &'static str {
+    if info.IsCodedPhy().unwrap_or(false) {
+        "Coded"
+    } else if info.IsUncoded2MPhy().unwrap_or(false) {
+        "2M"
+    } else if info.IsUncoded1MPhy().unwrap_or(false) {
+        "1M"
+    } else {
+        "?"
+    }
+}
+
+/// The PHY a connection sends on, and the one it receives on.
+fn connection_phy(
+    device: &BluetoothLEDevice,
+) -> windows::core::Result<(&'static str, &'static str)> {
+    let phy = device.GetConnectionPhy()?;
+    Ok((
+        phy_name(&phy.TransmitInfo()?),
+        phy_name(&phy.ReceiveInfo()?),
+    ))
+}
+
+/// A connection's PHY, told now and each time it changes, until dropped.
+pub struct PhyWatch {
+    device: BluetoothLEDevice,
+    token: i64,
+}
+
+impl PhyWatch {
+    /// Tells `told` the PHYs of the connection to `address`, sending and
+    /// receiving, now and each time they change. Blocks: call it off the
+    /// async runtime.
+    pub fn start(
+        address: &str,
+        told: impl Fn(&'static str, &'static str) + Send + 'static,
+    ) -> Result<Self, String> {
+        let device = le_device(address)?;
+        let (tx, rx) = connection_phy(&device).map_err(winrt)?;
+        told(tx, rx);
+        let handler = TypedEventHandler::new(move |device: Ref<BluetoothLEDevice>, _| {
+            if let Ok(device) = device.ok()
+                && let Ok((tx, rx)) = connection_phy(device)
+            {
+                told(tx, rx);
+            }
+            Ok(())
+        });
+        let token = device.ConnectionPhyChanged(&handler).map_err(winrt)?;
+        Ok(Self { device, token })
+    }
+}
+
+impl Drop for PhyWatch {
+    fn drop(&mut self) {
+        let _ = self.device.RemoveConnectionPhyChanged(self.token);
+    }
+}
+
 pub fn peripheral_problem() -> Option<String> {
     let adapter = match BluetoothAdapter::GetDefaultAsync().and_then(|operation| operation.join()) {
         Ok(adapter) => adapter,

@@ -1,4 +1,4 @@
-// A Peripheral simulator tab's GATT server, as the UI keeps it: the services
+// A device simulator tab's GATT server, as the UI keeps it: the services
 // set up, their values while it runs, who is subscribed, the timers, and the log.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -85,6 +85,12 @@ function key(service: number, characteristic: number): string {
 function count(n: number, thing: string): string {
   return `${n} ${thing}${n === 1 ? "" : "s"}`;
 }
+
+/**
+ * The simulator's server that serves, or is starting. The simulators would
+ * share the PC's one GATT table and its advert, so one serves at a time.
+ */
+let serving: ServerState | null = null;
 
 export class ServerState {
   services: ServiceSetup[] = $state([]);
@@ -174,6 +180,10 @@ export class ServerState {
     }
     this.problem = "";
     this.starting = true;
+    // The one that serves stops first.
+    const before = serving;
+    serving = this;
+    if (before && before !== this) await before.stop("another simulator started");
     this.values.clear();
     this.subscribers.clear();
     this.adverts = services.map(() => ({ on: false, text: "Starting" }));
@@ -183,7 +193,15 @@ export class ServerState {
     const channel = new Channel<ServerEvent>();
     channel.onmessage = (event) => this.take(event);
     try {
-      this.id = await invoke<number>("server_start", { services, events: channel });
+      const id = await invoke<number>("server_start", { services, events: channel });
+      if (serving !== this) {
+        // Another simulator started while this one was starting: that one serves.
+        await invoke("server_stop", { id }).catch(() => {});
+        this.adverts = [];
+        this.addLine({ kind: "state", key: null, name: "GATT server", text: "Stopped, as another simulator started", hex: "" });
+        return;
+      }
+      this.id = id;
       this.addLine({
         kind: "state",
         key: null,
@@ -193,6 +211,7 @@ export class ServerState {
       });
       this.services.forEach((service, at) => service.characteristics.forEach((_, index) => this.startTimer(at, index)));
     } catch (error) {
+      if (serving === this) serving = null;
       this.problem = String(error);
       this.adverts = [];
       this.addLine({ kind: "error", key: null, name: "GATT server", text: this.problem, hex: "" });
@@ -201,8 +220,9 @@ export class ServerState {
     }
   }
 
-  /** Takes the services off the radio, and their advert. */
-  async stop(): Promise<void> {
+  /** Takes the services off the radio, and their advert; `because` says why, in the log, when it was not asked. */
+  async stop(because = ""): Promise<void> {
+    if (serving === this) serving = null;
     for (const timer of this.timers.values()) clearInterval(timer);
     this.timers.clear();
     const id = this.id;
@@ -211,7 +231,13 @@ export class ServerState {
     this.adverts = [];
     if (id !== null) {
       await invoke("server_stop", { id }).catch(() => {});
-      this.addLine({ kind: "state", key: null, name: "GATT server", text: "Stopped: its services and their advert are gone", hex: "" });
+      this.addLine({
+        kind: "state",
+        key: null,
+        name: "GATT server",
+        text: `Stopped${because ? `, as ${because}` : ""}: its services and their advert are gone`,
+        hex: "",
+      });
     }
   }
 

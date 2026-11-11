@@ -1,11 +1,12 @@
-//! Scans with the computer's Bluetooth for a few seconds and prints what it heard.
+//! Scans with the computer's Bluetooth for a few seconds and prints what it heard,
+//! and what the radio can do here.
 //!
-//! cargo run -p blenima-core --example scan -- [seconds]
+//! cargo run -p blenima-core --example scan -- [seconds] [passive] [coded]
 
 use std::time::{Duration, Instant};
 
 use blenima_core::radio::Radio;
-use blenima_core::scanner::DeviceTable;
+use blenima_core::scanner::{DeviceTable, ScanSetup};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), String> {
@@ -13,11 +14,24 @@ async fn main() -> Result<(), String> {
         .nth(1)
         .and_then(|text| text.parse().ok())
         .unwrap_or(8);
+    let words: Vec<String> = std::env::args().collect();
+    let setup = ScanSetup {
+        passive: words.iter().any(|word| word == "passive"),
+        coded: words.iter().any(|word| word == "coded"),
+    };
     let radio = Radio::open().await?;
     let info = radio.info();
     println!("{}: raw adverts {}", info.name, info.raw_adverts);
+    println!("2M PHY {:?}, Coded PHY {:?}", info.phy_2m, info.phy_coded);
+    println!("passive: {:?}", info.passive_problem);
+    println!("coded scan: {:?}", info.coded_scan_problem);
+    println!("tx power: {:?}", info.tx_power_problem);
+    println!("extended: {:?}", info.extended_problem);
+    println!("advert PHYs: {:?}", info.advert_phy_problem);
+    println!("connection PHY: {:?}", info.phy_problem);
+    println!("scanning with {setup:?}");
     let (sink, mut adverts) = tokio::sync::mpsc::unbounded_channel();
-    let listening = radio.listen(sink, Instant::now()).await?;
+    let listening = radio.listen(sink, Instant::now(), setup).await?;
     let mut table = DeviceTable::new();
     let _ = tokio::time::timeout(Duration::from_secs(seconds), async {
         while let Some(advert) = adverts.recv().await {

@@ -1,4 +1,4 @@
-// The GATT server of a Peripheral simulator tab, as data: its presets, the
+// The GATT server of a device simulator tab, as data: its presets, the
 // made-up live values its timers send, and its services as the Rust side
 // takes them. It has no imports, so its tests run in Node as they are.
 

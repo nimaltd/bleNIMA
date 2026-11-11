@@ -1,4 +1,4 @@
-//! bleNIMA as a GATT server: the services a Peripheral simulator tab offers,
+//! bleNIMA as a GATT server: the services a device simulator tab offers,
 //! the values they hold, and what the clients do with them.
 //!
 //! The OS does the radio work; this file has what does not need a radio, so

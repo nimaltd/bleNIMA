@@ -3,7 +3,6 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import About from "./lib/About.svelte";
-  import Coming from "./lib/Coming.svelte";
   import DeviceView from "./lib/DeviceView.svelte";
   import ScannerView from "./lib/ScannerView.svelte";
   import BondsDialog from "./lib/BondsDialog.svelte";
@@ -147,8 +146,6 @@
             <DeviceView {tab} active={i === view.active} />
           {:else if tab.server}
             <SimulatorView {tab} />
-          {:else}
-            <Coming {tab} onscan={() => newTab("scanner")} />
           {/if}
         </div>
       {/each}

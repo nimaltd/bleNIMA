@@ -2,7 +2,16 @@
   import { onMount } from "svelte";
   import { save } from "@tauri-apps/plugin-dialog";
   import Chart, { align } from "./Chart.svelte";
-  import { TERMINAL_PRESETS, addressKindText, advKindText, type DeviceDetails, type DeviceRow } from "./bluetooth";
+  import {
+    TERMINAL_PRESETS,
+    addressKindText,
+    advKindText,
+    radioInfo,
+    type DeviceDetails,
+    type DeviceRow,
+    type RadioInfo,
+    type ScanSetup,
+  } from "./bluetooth";
   import { changed, openDevice, type Tab } from "./tabs.svelte";
 
   let { tab }: { tab: Tab } = $props();
@@ -11,11 +20,21 @@
   let now = $state(Date.now());
   let details: DeviceDetails | null = $state(null);
   let csvProblem = $state("");
+  /** What the radio can do here: what it cannot is greyed out, with why. */
+  let radio: RadioInfo | null = $state(null);
 
   onMount(() => {
+    radioInfo()
+      .then((info) => (radio = info))
+      .catch(() => {});
     const timer = setInterval(() => (now = Date.now()), 1000);
     return () => clearInterval(timer);
   });
+
+  /** Listens another way, and keeps it with the tab. */
+  function setScan(scan: ScanSetup) {
+    void scanner.setScan(scan).then(changed);
+  }
 
   // The selected device's details, read again every second while it is selected.
   $effect(() => {
@@ -116,6 +135,29 @@
       <button class="btn small primary" onclick={() => tab.start()}>Scan</button>
     {/if}
     <button class="btn small" onclick={() => scanner.clear()} title="Forget every device heard">Clear</button>
+    <select
+      class="field small"
+      aria-label="How it scans"
+      title={radio?.passive_problem ??
+        "Active asks each device for its scan response; passive only listens, and hears no scan responses"}
+      value={scanner.scan.passive && !radio?.passive_problem ? "passive" : "active"}
+      disabled={!!radio?.passive_problem}
+      onchange={(event) => setScan({ ...scanner.scan, passive: event.currentTarget.value === "passive" })}
+    >
+      <option value="active">Active scan</option>
+      <option value="passive">Passive scan</option>
+    </select>
+    <label
+      class="check"
+      class:off={!!radio?.coded_scan_problem}
+      title={radio?.coded_scan_problem ?? "Hear the LE Coded PHY too, for long range, as well as 1M"}
+      ><input
+        type="checkbox"
+        checked={scanner.scan.coded && !radio?.coded_scan_problem}
+        disabled={!!radio?.coded_scan_problem}
+        onchange={(event) => setScan({ ...scanner.scan, coded: event.currentTarget.checked })}
+      /> Coded PHY</label
+    >
     <span class="separator"></span>
     <input
       class="field small search"
@@ -146,10 +188,10 @@
     <label class="option">
       Sort
       <select class="field small" bind:value={scanner.filter.sort} onchange={filterChanged}>
+        <option value="first">First heard</option>
         <option value="rssi">RSSI</option>
         <option value="name">Name</option>
         <option value="last">Last heard</option>
-        <option value="first">First heard</option>
       </select>
     </label>
     <span class="spacer"></span>
@@ -349,6 +391,10 @@
     align-items: center;
     gap: 5px;
     color: var(--muted);
+  }
+
+  .check.off {
+    opacity: 0.5;
   }
 
   .check:has(input:checked) {

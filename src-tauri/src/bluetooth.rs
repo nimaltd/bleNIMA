@@ -1,5 +1,5 @@
 //! The commands the UI calls for Bluetooth: the radio, scanner tabs, device
-//! tabs, and Peripheral simulator tabs' adverts and GATT servers.
+//! tabs, and device simulator tabs' adverts and GATT servers.
 //!
 //! The work is in `blenima-core`; this file keeps each tab's session and sends
 //! what happens to its tab through a channel.
@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use blenima_core::advert::AdStructure;
+use blenima_core::advert::{AdStructure, AdvertOptions};
 use blenima_core::device::{Command, DeviceEvent, DeviceSession};
 use blenima_core::names::{self, Kind};
 use blenima_core::radio::{Advertising, Radio, RadioInfo, Serving};
-use blenima_core::scanner::{Changes, DeviceDetails, DeviceTable};
+use blenima_core::scanner::{Changes, DeviceDetails, DeviceTable, ScanSetup};
 use blenima_core::server::{Place, ServerEvent, Service};
 use serde::Serialize;
 use tauri::State;
@@ -67,16 +67,18 @@ pub async fn radio_info(bluetooth: State<'_, Bluetooth>) -> Result<RadioInfo, St
     Ok(bluetooth.radio().await?.info())
 }
 
-/// Starts hearing adverts into a scanner's table, sending what changed to `events`.
+/// Starts hearing adverts into a scanner's table, as `setup` says, sending
+/// what changed to `events`.
 fn listen(
     radio: Arc<Radio>,
     table: Arc<Mutex<DeviceTable>>,
     started: Instant,
     events: Channel<Changes>,
+    setup: ScanSetup,
 ) -> JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
         let (sink, mut adverts) = tokio::sync::mpsc::unbounded_channel();
-        let _listening = match radio.listen(sink, started).await {
+        let _listening = match radio.listen(sink, started, setup).await {
             Ok(listening) => listening,
             Err(problem) => {
                 let _ = events.send(Changes {
@@ -104,16 +106,24 @@ fn listen(
     })
 }
 
-/// Opens a scanner and starts scanning. Returns its id.
+/// Opens a scanner and starts scanning, passively or not and on the Coded PHY
+/// as `scan` says. Returns its id.
 #[tauri::command]
 pub async fn scan_open(
     events: Channel<Changes>,
+    scan: Option<ScanSetup>,
     bluetooth: State<'_, Bluetooth>,
 ) -> Result<u32, String> {
     let radio = bluetooth.radio().await?;
     let table = Arc::new(Mutex::new(DeviceTable::new()));
     let started = Instant::now();
-    let task = listen(radio, table.clone(), started, events);
+    let task = listen(
+        radio,
+        table.clone(),
+        started,
+        events,
+        scan.unwrap_or_default(),
+    );
     let id = bluetooth.id();
     lock(&bluetooth.scanners).insert(
         id,
@@ -126,12 +136,14 @@ pub async fn scan_open(
     Ok(id)
 }
 
-/// Pauses or goes on scanning, keeping the devices heard so far.
+/// Pauses or goes on scanning, keeping the devices heard so far. Going on
+/// again, it scans as `scan` says, so a change of setup starts it anew.
 #[tauri::command]
 pub async fn scan_run(
     id: u32,
     on: bool,
     events: Channel<Changes>,
+    scan: Option<ScanSetup>,
     bluetooth: State<'_, Bluetooth>,
 ) -> Result<(), String> {
     let radio = if on {
@@ -150,6 +162,7 @@ pub async fn scan_run(
             scanner.table.clone(),
             scanner.started,
             events,
+            scan.unwrap_or_default(),
         ));
     }
     Ok(())
@@ -267,13 +280,15 @@ pub async fn bonds(
     bluetooth.radio().await?.bonds().await
 }
 
-/// Starts advertising, as a peripheral does. Returns its id, to stop it.
+/// Starts advertising, as a peripheral does, with `options` where the OS and
+/// the adapter let an app choose. Returns its id, to stop it.
 #[tauri::command]
 pub fn advertise_start(
     structures: Vec<AdStructure>,
+    options: Option<AdvertOptions>,
     bluetooth: State<'_, Bluetooth>,
 ) -> Result<u32, String> {
-    let advertising = Advertising::start(&structures)?;
+    let advertising = Advertising::start(&structures, &options.unwrap_or_default())?;
     let id = bluetooth.id();
     lock(&bluetooth.adverts).insert(id, advertising);
     Ok(id)

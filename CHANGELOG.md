@@ -5,6 +5,39 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- A connection's PHY in the device tab's toolbar, next to the MTU: 1M, 2M or
+  Coded, sending and receiving, as Windows tells it and as it changes. No OS
+  lets an app choose it; its tooltip says how a device's firmware asks for 2M
+  or Coded.
+- The scanner scans actively or passively, and can hear the LE Coded PHY (long
+  range) too.
+- A device simulator's advert can ask for a transmit power, be a Bluetooth 5
+  extended advert, say its transmit power in its header, and choose its
+  primary and secondary PHYs.
+- What the OS or the adapter cannot do is greyed out, saying why: an adapter
+  without Bluetooth 5, a Windows without the newer calls, or macOS and Linux,
+  which do not let an app choose these.
+
+### Changed
+
+- New tab has two things: Scanner, and Device simulator. There is one scanner
+  at most: Scanner is greyed out while it is open. Device and terminal tabs open
+  from the scanner, as before; Mesh is in the Tools menu until it is built.
+- Peripheral simulator is now called Device simulator.
+- One device simulator serves at a time: they would share the computer's one
+  GATT table and its advert, so a phone would see them all as one device.
+  Starting one stops the one that serves, and says so in its log.
+- The scanner sorts by first heard unless told otherwise, and First heard is
+  first in the Sort list.
+
+### Removed
+
+- The page that empty device and terminal tabs showed, as New tab no longer
+  makes them. Tabs saved by 0.2.0 that no longer open are left out: a second
+  scanner, a device or terminal tab with no device, and Mesh.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

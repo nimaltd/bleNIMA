@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::gatt::{self, PresentationFormat};
 use crate::names::{self, Kind};
-use crate::radio::Radio;
+use crate::radio::{PhyWatch, Radio};
 
 /// How long one search for the device lasts before it is told again that it is looked for.
 const SEARCH: Duration = Duration::from_secs(5);
@@ -139,6 +139,12 @@ pub enum DeviceEvent {
         interval_ms: Option<f64>,
         latency: Option<u16>,
         timeout_ms: Option<f64>,
+    },
+    /// The PHY the connection sends on and the one it receives on: "1M",
+    /// "2M" or "Coded". Only where the OS tells it.
+    Phy {
+        tx: String,
+        rx: String,
     },
     /// A line for the log, such as the time it was lost and found again.
     Mark {
@@ -331,6 +337,22 @@ async fn run(
             });
         }
         session.state(LinkState::Connected, format!("Connected to {}", session.id));
+        // The PHY, now and as it changes, for as long as this connection lasts.
+        let _phy = {
+            let events = session.events.clone();
+            let id = session.id.clone();
+            tokio::task::spawn_blocking(move || {
+                PhyWatch::start(&id, move |tx, rx| {
+                    let _ = events.send(DeviceEvent::Phy {
+                        tx: tx.into(),
+                        rx: rx.into(),
+                    });
+                })
+            })
+            .await
+            .ok()
+            .flatten()
+        };
 
         let mut notifications = match peripheral.notifications().await {
             Ok(stream) => Some(stream),

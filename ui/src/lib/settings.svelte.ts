@@ -20,10 +20,10 @@ export type UpdateSettings = {
   skipped: string;
 };
 
-/** How a Peripheral simulator tab lays out its advertiser, GATT server and log. */
+/** How a device simulator tab lays out its advertiser, GATT server and log. */
 export type SimulatorLayout = "views" | "page" | "columns";
 
-/** Peripheral simulator tabs. */
+/** Device simulator tabs. */
 export type SimulatorSettings = {
   layout: SimulatorLayout;
 };

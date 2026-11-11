@@ -94,7 +94,7 @@ impl Default for UpdateSettings {
     }
 }
 
-/// How a Peripheral simulator tab lays out its advertiser, GATT server and log.
+/// How a device simulator tab lays out its advertiser, GATT server and log.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SimulatorLayout {
@@ -107,7 +107,7 @@ pub enum SimulatorLayout {
     Columns,
 }
 
-/// Peripheral simulator tabs.
+/// Device simulator tabs.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SimulatorSettings {

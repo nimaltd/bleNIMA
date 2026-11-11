@@ -13,7 +13,46 @@ export type RadioInfo = {
   peripheral: boolean;
   /** Why it cannot be a peripheral, in words; null when it can. */
   peripheral_problem: string | null;
+  /** Why a connection's PHY is not shown, in words; null where the OS can tell it. */
+  phy_problem: string | null;
+  /** Why the scanner cannot scan passively, in words; null when it can. */
+  passive_problem: string | null;
+  /** Why the scanner cannot hear the LE Coded PHY, in words; null when it can. */
+  coded_scan_problem: string | null;
+  /** Why an advert's transmit power cannot be chosen, in words; null when it can. */
+  tx_power_problem: string | null;
+  /** Why an advert cannot be an extended one, in words; null when it can. */
+  extended_problem: string | null;
+  /** Why an extended advert's PHYs cannot be chosen, in words; null when they can. */
+  advert_phy_problem: string | null;
+  /** The adapter has the LE 2M PHY; null where the OS does not say. */
+  phy_2m: boolean | null;
+  /** The adapter has the LE Coded PHY; null where the OS does not say. */
+  phy_coded: boolean | null;
   limits: string[];
+};
+
+/** How the scanner listens: the same fields as `ScanSetup` in scanner.rs. */
+export type ScanSetup = {
+  /** Only listens: sends no scan requests, so hears no scan responses. */
+  passive: boolean;
+  /** Hears the LE Coded PHY too, where the OS and the adapter can. */
+  coded: boolean;
+};
+
+/** A PHY an extended advert is sent on. */
+export type Phy = "1m" | "2m" | "coded";
+
+/** What an advert is sent with besides its AD structures: the same fields as `AdvertOptions` in advert.rs. */
+export type AdvertOptions = {
+  /** The transmit power asked for, in dBm; null for the OS's own. */
+  tx_power: number | null;
+  /** Says the transmit power in an extended advert's header. */
+  include_tx_power: boolean;
+  /** A Bluetooth 5 extended advert: longer, and on the PHYs below. */
+  extended: boolean;
+  primary_phy: Phy;
+  secondary_phy: Phy;
 };
 
 export type AddressKind = "public" | "random" | "random_static" | "resolvable_private" | "non_resolvable_private";
@@ -109,6 +148,7 @@ export type DeviceEvent =
   | { type: "subscribed"; key: string; on: boolean }
   | { type: "failed"; key: string | null; action: string; problem: string; at_ms: number }
   | ({ type: "link" } & Link)
+  | { type: "phy"; tx: string; rx: string }
   | { type: "mark"; text: string; at_ms: number };
 
 export type Command =

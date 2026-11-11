@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { NEW_TABS, type TabKind } from "./new-tab";
-  import { isBuilt } from "./roadmap";
+  import { NEW_TABS, type NewTab } from "./new-tab";
   import { look, stateText } from "./state";
-  import { closeTab, showTab, tabs, view } from "./tabs.svelte";
+  import { closeTab, hasScanner, showTab, tabs, view } from "./tabs.svelte";
 
-  /** Opens a new tab of a kind. */
-  let { onnew }: { onnew: (kind: TabKind) => void } = $props();
+  /** Opens a new scanner or device simulator tab. */
+  let { onnew }: { onnew: (kind: NewTab["kind"]) => void } = $props();
 
   let bar: HTMLDivElement;
   let add: HTMLButtonElement;
@@ -20,7 +19,7 @@
     }
   }
 
-  function pick(kind: TabKind) {
+  function pick(kind: NewTab["kind"]) {
     choice = null;
     onnew(kind);
   }
@@ -91,14 +90,13 @@
 
   {#if choice}
     <div class="choice" role="menu" style:left={`${choice.left}px`}>
-      <!-- The same as File > New tab. -->
-      {#each NEW_TABS as { kind, label, detail, phase } (kind)}
-        <button role="menuitem" onclick={() => pick(kind)}>
+      <!-- The same as File > New tab. There is one scanner at most. -->
+      {#each NEW_TABS as { kind, label, detail } (kind)}
+        {@const open = kind === "scanner" && hasScanner()}
+        <button role="menuitem" disabled={open} onclick={() => pick(kind)}>
           <span class="title">
             <strong>{label}</strong>
-            {#if !isBuilt(phase)}
-              <span class="phase" title={`Comes in Phase ${phase} of the roadmap`}>Phase {phase}</span>
-            {/if}
+            {#if open}<span class="note">Open already</span>{/if}
           </span>
           <span class="detail">{detail}</span>
         </button>
@@ -143,8 +141,12 @@
     cursor: default;
   }
 
-  .choice button:hover {
+  .choice button:hover:not(:disabled) {
     background: var(--accent-soft);
+  }
+
+  .choice button:disabled {
+    opacity: 0.5;
   }
 
   .title {
@@ -163,7 +165,7 @@
     color: var(--muted);
   }
 
-  .phase {
+  .note {
     flex-shrink: 0;
     padding: 0 6px;
     font-size: 11px;

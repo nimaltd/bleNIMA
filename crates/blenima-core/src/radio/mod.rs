@@ -22,14 +22,18 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
-use crate::advert::{AdStructure, ad, uuid_to_le};
+use crate::advert::{AdStructure, AdvertOptions, ad, uuid_to_le};
 use crate::names;
-use crate::scanner::{AddressKind, Advert};
+use crate::scanner::{AddressKind, Advert, ScanSetup};
 use crate::server::{Place, ServerEvent, Service};
 
 /// What bleNIMA says where it cannot be a GATT server.
 #[cfg(not(target_os = "windows"))]
 const SERVER_ELSEWHERE: &str = "A GATT server from bleNIMA works on Windows for now.";
+
+/// What bleNIMA says where it cannot advertise.
+#[cfg(not(target_os = "windows"))]
+const ADVERT_ELSEWHERE: &str = "Advertising from bleNIMA works on Windows for now.";
 
 /// bleNIMA advertising as a peripheral, until it is dropped.
 pub struct Advertising {
@@ -38,18 +42,21 @@ pub struct Advertising {
 }
 
 impl Advertising {
-    /// Starts advertising these AD structures, where the OS lets an app.
-    pub fn start(structures: &[crate::advert::AdStructure]) -> Result<Self, String> {
+    /// Starts advertising these AD structures, with `options`, where the OS lets an app.
+    pub fn start(
+        structures: &[crate::advert::AdStructure],
+        options: &AdvertOptions,
+    ) -> Result<Self, String> {
         #[cfg(target_os = "windows")]
         {
             Ok(Self {
-                publisher: windows::Publisher::start(structures)?,
+                publisher: windows::Publisher::start(structures, options)?,
             })
         }
         #[cfg(not(target_os = "windows"))]
         {
-            let _ = structures;
-            Err("Advertising from bleNIMA works on Windows for now.".into())
+            let _ = (structures, options);
+            Err(ADVERT_ELSEWHERE.into())
         }
     }
 
@@ -106,6 +113,34 @@ impl Serving {
     }
 }
 
+/// A connection's PHY, told as it changes, until dropped.
+pub struct PhyWatch {
+    #[cfg(target_os = "windows")]
+    _watch: windows::PhyWatch,
+}
+
+impl PhyWatch {
+    /// Tells `told` the PHYs of the connection to the device with this id,
+    /// sending and receiving, now and each time they change; none where the OS
+    /// does not tell. Blocks: call it off the async runtime.
+    pub fn start(
+        id: &str,
+        told: impl Fn(&'static str, &'static str) + Send + 'static,
+    ) -> Option<Self> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::PhyWatch::start(id, told)
+                .ok()
+                .map(|watch| Self { _watch: watch })
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (id, told);
+            None
+        }
+    }
+}
+
 /// A device the OS has a bond with.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Bond {
@@ -135,8 +170,109 @@ pub struct RadioInfo {
     pub peripheral: bool,
     /// Why it cannot be a peripheral, in words; none when it can.
     pub peripheral_problem: Option<String>,
+    /// Why a connection's PHY is not shown, in words; none where the OS can tell it.
+    pub phy_problem: Option<String>,
+    /// Why the scanner cannot scan passively, in words; none when it can.
+    pub passive_problem: Option<String>,
+    /// Why the scanner cannot hear the LE Coded PHY, in words; none when it can.
+    pub coded_scan_problem: Option<String>,
+    /// Why an advert's transmit power cannot be chosen, in words; none when it can.
+    pub tx_power_problem: Option<String>,
+    /// Why an advert cannot be an extended one, in words; none when it can.
+    pub extended_problem: Option<String>,
+    /// Why an extended advert's PHYs cannot be chosen, in words; none when they can.
+    pub advert_phy_problem: Option<String>,
+    /// The adapter has the LE 2M PHY; none where the OS does not say.
+    pub phy_2m: Option<bool>,
+    /// The adapter has the LE Coded PHY; none where the OS does not say.
+    pub phy_coded: Option<bool>,
     /// What the OS does not let an app do here, in words.
     pub limits: Vec<String>,
+}
+
+/// What the radio can do besides the basics, and why not where it cannot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Abilities {
+    phy_problem: Option<String>,
+    passive_problem: Option<String>,
+    coded_scan_problem: Option<String>,
+    tx_power_problem: Option<String>,
+    extended_problem: Option<String>,
+    advert_phy_problem: Option<String>,
+    phy_2m: Option<bool>,
+    phy_coded: Option<bool>,
+}
+
+/// What Windows and its adapter can do, put into words.
+#[cfg(target_os = "windows")]
+fn windows_abilities(features: windows::Features) -> Abilities {
+    let newer = |what: &str| {
+        Some(format!(
+            "This Windows cannot {what}: it needs a newer Windows 11"
+        ))
+    };
+    let coded_scan_problem = if !features.scan_phys {
+        newer("choose the PHYs it scans on")
+    } else if features.phy_coded == Some(false) {
+        Some("This Bluetooth adapter has no LE Coded PHY: long range needs a Bluetooth 5 adapter with it".into())
+    } else {
+        None
+    };
+    let extended_problem = if !features.advert_extended {
+        newer("send extended adverts")
+    } else if features.extended_adverts == Some(false) {
+        Some("This Bluetooth adapter cannot send extended adverts: they need Bluetooth 5".into())
+    } else {
+        None
+    };
+    Abilities {
+        phy_problem: None,
+        passive_problem: None,
+        coded_scan_problem,
+        tx_power_problem: (!features.advert_tx_power).then(|| {
+            "This Windows cannot set an advert's transmit power: it needs a newer Windows".into()
+        }),
+        advert_phy_problem: if extended_problem.is_some() {
+            extended_problem.clone()
+        } else if !features.advert_phys {
+            newer("choose an advert's PHYs")
+        } else {
+            None
+        },
+        extended_problem,
+        phy_2m: features.phy_2m,
+        phy_coded: features.phy_coded,
+    }
+}
+
+/// What the OS does not let an app do, in words, where bleNIMA has no WinRT.
+#[cfg(not(target_os = "windows"))]
+fn other_abilities() -> Abilities {
+    let (os, phys) = if cfg!(target_os = "macos") {
+        (
+            "macOS",
+            "macOS does not let an app choose the PHYs it scans on",
+        )
+    } else {
+        (
+            "BlueZ",
+            "BlueZ chooses the PHYs it scans on for the whole adapter, and only as root",
+        )
+    };
+    Abilities {
+        phy_problem: Some(format!("{os} does not tell an app a connection's PHY")),
+        passive_problem: Some(if cfg!(target_os = "macos") {
+            "macOS does not let an app scan passively".into()
+        } else {
+            "On Linux, bleNIMA scans actively for now".into()
+        }),
+        coded_scan_problem: Some(phys.into()),
+        tx_power_problem: Some(ADVERT_ELSEWHERE.into()),
+        extended_problem: Some(ADVERT_ELSEWHERE.into()),
+        advert_phy_problem: Some(ADVERT_ELSEWHERE.into()),
+        phy_2m: None,
+        phy_coded: None,
+    }
 }
 
 fn problem(error: impl std::fmt::Display) -> String {
@@ -150,6 +286,8 @@ pub struct Radio {
     scans: Mutex<usize>,
     /// Why the adapter cannot be a peripheral, asked once when it opens; none when it can.
     peripheral_problem: Option<String>,
+    /// What else it can do, asked once when it opens.
+    abilities: Abilities,
 }
 
 impl Radio {
@@ -174,10 +312,18 @@ impl Radio {
             .unwrap_or_else(|error| Some(error.to_string()));
         #[cfg(not(target_os = "windows"))]
         let peripheral_problem = Some(SERVER_ELSEWHERE.to_string());
+        #[cfg(target_os = "windows")]
+        let abilities = tokio::task::spawn_blocking(windows::features)
+            .await
+            .map(windows_abilities)
+            .unwrap_or_default();
+        #[cfg(not(target_os = "windows"))]
+        let abilities = other_abilities();
         Ok(Arc::new(Self {
             adapter,
             scans: Mutex::new(0),
             peripheral_problem,
+            abilities,
         }))
     }
 
@@ -189,6 +335,16 @@ impl Radio {
     pub fn info(&self) -> RadioInfo {
         let peripheral = self.peripheral_problem.is_none();
         let peripheral_problem = self.peripheral_problem.clone();
+        let Abilities {
+            phy_problem,
+            passive_problem,
+            coded_scan_problem,
+            tx_power_problem,
+            extended_problem,
+            advert_phy_problem,
+            phy_2m,
+            phy_coded,
+        } = self.abilities.clone();
         if cfg!(target_os = "windows") {
             RadioInfo {
                 name: "Windows Bluetooth".into(),
@@ -198,6 +354,14 @@ impl Radio {
                 pairing: true,
                 peripheral,
                 peripheral_problem,
+                phy_problem,
+                passive_problem,
+                coded_scan_problem,
+                tx_power_problem,
+                extended_problem,
+                advert_phy_problem,
+                phy_2m,
+                phy_coded,
                 limits: vec![
                     "Windows picks the MTU and the PHY itself; bleNIMA shows what it picked."
                         .into(),
@@ -213,6 +377,14 @@ impl Radio {
                 pairing: false,
                 peripheral,
                 peripheral_problem,
+                phy_problem,
+                passive_problem,
+                coded_scan_problem,
+                tx_power_problem,
+                extended_problem,
+                advert_phy_problem,
+                phy_2m,
+                phy_coded,
                 limits: vec![
                     "macOS gives each device a made-up ID instead of its address.".into(),
                     "Adverts are made again from what macOS read from them.".into(),
@@ -228,6 +400,14 @@ impl Radio {
                 pairing: false,
                 peripheral,
                 peripheral_problem,
+                phy_problem,
+                passive_problem,
+                coded_scan_problem,
+                tx_power_problem,
+                extended_problem,
+                advert_phy_problem,
+                phy_2m,
+                phy_coded,
                 limits: vec![
                     "Adverts are made again from what BlueZ read from them.".into(),
                     "BlueZ picks the MTU, the PHY and the connection parameters itself.".into(),
@@ -259,15 +439,24 @@ impl Radio {
     }
 
     /// Starts handing every advert heard to `sink`, timed from `started`, until
-    /// the returned handle is dropped.
+    /// the returned handle is dropped. `setup` says how to listen, where the OS
+    /// lets an app choose.
     pub async fn listen(
         self: &Arc<Self>,
         sink: UnboundedSender<Advert>,
         started: Instant,
+        setup: ScanSetup,
     ) -> Result<Listening, String> {
+        // What this radio cannot do is not asked of it, even by a tab saved on
+        // another computer: a scan for the Coded PHY on an adapter without it
+        // hears nothing at all.
+        let setup = ScanSetup {
+            passive: setup.passive && self.abilities.passive_problem.is_none(),
+            coded: setup.coded && self.abilities.coded_scan_problem.is_none(),
+        };
         #[cfg(target_os = "windows")]
         {
-            let watcher = windows::Watcher::start(sink, started)?;
+            let watcher = windows::Watcher::start(sink, started, setup)?;
             Ok(Listening {
                 _watcher: Some(watcher),
                 task: None,
@@ -276,6 +465,8 @@ impl Radio {
         }
         #[cfg(not(target_os = "windows"))]
         {
+            // The OS scans as it does: the UI greys out what it does not let an app choose.
+            let _ = setup;
             let mut events = self.adapter.events().await.map_err(problem)?;
             self.scan_on().await?;
             let radio = self.clone();
@@ -539,5 +730,74 @@ mod tests {
     fn a_hidden_address_is_not_shown() {
         let made = from_properties("uuid", &PeripheralProperties::default(), 0.0);
         assert_eq!(made.address, None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn what_windows_and_its_adapter_cannot_do_is_said_in_words() {
+        // A Bluetooth 4 adapter on a Windows that has every call.
+        let bluetooth_4 = windows::Features {
+            phy_2m: Some(false),
+            phy_coded: Some(false),
+            extended_adverts: Some(false),
+            scan_phys: true,
+            advert_tx_power: true,
+            advert_extended: true,
+            advert_phys: true,
+        };
+        let abilities = windows_abilities(bluetooth_4);
+        assert_eq!(abilities.passive_problem, None);
+        assert_eq!(abilities.tx_power_problem, None);
+        assert!(
+            abilities
+                .coded_scan_problem
+                .unwrap()
+                .contains("no LE Coded PHY")
+        );
+        assert!(
+            abilities
+                .extended_problem
+                .as_deref()
+                .unwrap()
+                .contains("Bluetooth 5")
+        );
+        assert_eq!(abilities.advert_phy_problem, abilities.extended_problem);
+        // A Bluetooth 5 adapter on a Windows without the newer calls.
+        let older = windows::Features {
+            phy_coded: Some(true),
+            extended_adverts: Some(true),
+            ..windows::Features::default()
+        };
+        let abilities = windows_abilities(older);
+        assert!(
+            abilities
+                .coded_scan_problem
+                .unwrap()
+                .contains("newer Windows 11")
+        );
+        assert!(
+            abilities
+                .tx_power_problem
+                .unwrap()
+                .contains("newer Windows")
+        );
+        // Both new: nothing is greyed out.
+        let bluetooth_5 = windows::Features {
+            phy_2m: Some(true),
+            phy_coded: Some(true),
+            extended_adverts: Some(true),
+            scan_phys: true,
+            advert_tx_power: true,
+            advert_extended: true,
+            advert_phys: true,
+        };
+        assert_eq!(
+            windows_abilities(bluetooth_5),
+            Abilities {
+                phy_2m: Some(true),
+                phy_coded: Some(true),
+                ..Abilities::default()
+            }
+        );
     }
 }

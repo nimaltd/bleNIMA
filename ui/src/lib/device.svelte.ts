@@ -61,6 +61,8 @@ export class DeviceState {
   stateText = $state("Not connected");
   services: ServiceInfo[] = $state([]);
   link: Link | null = $state(null);
+  /** The PHY the connection sends and receives on: "1M", "2M" or "Coded"; null until the OS tells it. */
+  phy: { tx: string; rx: string } | null = $state(null);
   readonly values = new SvelteMap<string, Value>();
   readonly history = new Map<string, Value[]>();
   /** Grows as values come, so plots and lists know to draw again. */
@@ -206,7 +208,10 @@ export class DeviceState {
           void this.checkPaired();
           if (settings.device_card !== "off") this.readInfo();
         }
-        if (event.state !== "connected") this.connectedAt = null;
+        if (event.state !== "connected") {
+          this.connectedAt = null;
+          this.phy = null;
+        }
         if (event.state === "waiting" && was === "connected") {
           this.subscribed.clear();
           this.pending.clear();
@@ -221,6 +226,9 @@ export class DeviceState {
         break;
       case "link":
         this.link = { mtu: event.mtu, interval_ms: event.interval_ms, latency: event.latency, timeout_ms: event.timeout_ms };
+        break;
+      case "phy":
+        this.phy = { tx: event.tx, rx: event.rx };
         break;
       case "value": {
         const value: Value = { data: event.data, source: event.source, at: Date.now() };
@@ -309,6 +317,7 @@ export class DeviceState {
     this.state = "closed";
     this.stateText = "Not connected";
     this.connectedAt = null;
+    this.phy = null;
     this.subscribed.clear();
     this.pending.clear();
   }

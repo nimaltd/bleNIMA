@@ -15,7 +15,7 @@ export const PHASES: Phase[] = [
   { number: 4, name: "Testing tools" },
   { number: 5, name: "MCUmgr firmware update" },
   { number: 6, name: "Pairing and bonds" },
-  { number: 7, name: "Peripheral simulator" },
+  { number: 7, name: "Device simulator" },
   { number: 8, name: "Mesh over GATT proxy" },
   { number: 9, name: "1.0" },
 ];
