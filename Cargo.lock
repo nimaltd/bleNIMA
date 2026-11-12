@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "blenima"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "blenima-core",
  "serde",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "blenima-core"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "aes",
  "btleplug",

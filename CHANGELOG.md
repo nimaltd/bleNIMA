@@ -5,6 +5,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-12
+
 ### Added
 
 - The Mesh network tab, the third in New tab, one at most: bleNIMA as a mesh
@@ -195,7 +197,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   dongle, nor what only a dongle could do: the sniffer, direction finding,
   Channel Sounding and LE Audio streams.
 
-[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.0
 [0.3.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.1.0
