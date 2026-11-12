@@ -1,7 +1,7 @@
 <script lang="ts">
   import { NEW_TABS, type NewTab } from "./new-tab";
   import { look, stateText } from "./state";
-  import { closeTab, hasScanner, showTab, tabs, view } from "./tabs.svelte";
+  import { canOpen, closeTab, showTab, tabs, view } from "./tabs.svelte";
 
   /** Opens a new scanner or device simulator tab. */
   let { onnew }: { onnew: (kind: NewTab["kind"]) => void } = $props();
@@ -90,9 +90,9 @@
 
   {#if choice}
     <div class="choice" role="menu" style:left={`${choice.left}px`}>
-      <!-- The same as File > New tab. There is one scanner at most. -->
+      <!-- The same as File > New tab. There is one scanner and one Mesh tab at most. -->
       {#each NEW_TABS as { kind, label, detail } (kind)}
-        {@const open = kind === "scanner" && hasScanner()}
+        {@const open = !canOpen(kind)}
         <button role="menuitem" disabled={open} onclick={() => pick(kind)}>
           <span class="title">
             <strong>{label}</strong>

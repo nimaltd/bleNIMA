@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { reopened } from "./reopen.ts";
 
-test("the tabs that can open, open as they were, with one scanner", () => {
+test("the tabs that can open, open as they were, with one scanner and one Mesh tab", () => {
   const saved = [
     { kind: "device", device: "" },
     { kind: "scanner" },
@@ -14,8 +14,10 @@ test("the tabs that can open, open as they were, with one scanner", () => {
     { kind: "simulator" },
     { kind: "terminal", device: "CC:DD" },
     { kind: "terminal" },
+    { kind: "mesh" },
+    { kind: "sniffer" },
   ];
-  assert.deepEqual(reopened(saved), [1, 2, 5, 6]);
+  assert.deepEqual(reopened(saved), [1, 2, 4, 5, 6]);
 });
 
 test("the scanner keeps its place among the others", () => {

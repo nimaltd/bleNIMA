@@ -5,6 +5,31 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- The Mesh network tab, the third in New tab, one at most: bleNIMA as a mesh
+  provisioner and configuration client, through the computer's own Bluetooth.
+  - It lists the devices waiting to be provisioned and the network's proxies,
+    from their adverts.
+  - Provisioning goes over PB-GATT, with either algorithm and No OOB, Static,
+    Output or Input OOB, as the device can.
+  - It connects by itself to a proxy of the network, and learns the IV index
+    from its beacon.
+  - Each node's page reads its composition, adds and deletes application keys,
+    binds models, and sets where they publish and what they subscribe to; and
+    resets a node.
+  - Clients for Generic OnOff and Level, Light Lightness, CTL and HSL, Sensor
+    and Health, to an element or a group, and any message by its opcode.
+  - Every message sent and received is in the tab's log, in words and bytes.
+  - The network's keys, IV index and nodes are kept in `mesh.toml` in the
+    config folder. Its crypto is checked against the Mesh Protocol spec's
+    sample data.
+
+### Changed
+
+- The welcome page is like libNIMA's: the logo, the version, where to read
+  more, the radio and what New tab opens, and a button for the scanner.
+
 ## [0.3.0] - 2026-11-11
 
 ### Added

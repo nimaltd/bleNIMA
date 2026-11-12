@@ -1,5 +1,5 @@
 //! The commands the UI calls for Bluetooth: the radio, scanner tabs, device
-//! tabs, and device simulator tabs' adverts and GATT servers.
+//! tabs, device simulator tabs' adverts and GATT servers, and the Mesh tab.
 //!
 //! The work is in `blenima-core`; this file keeps each tab's session and sends
 //! what happens to its tab through a channel.
@@ -11,14 +11,15 @@ use std::time::{Duration, Instant};
 
 use blenima_core::advert::{AdStructure, AdvertOptions};
 use blenima_core::device::{Command, DeviceEvent, DeviceSession};
+use blenima_core::mesh::session::{MeshCommand, MeshEvent, MeshSession};
 use blenima_core::names::{self, Kind};
 use blenima_core::radio::{Advertising, Radio, RadioInfo, Serving};
 use blenima_core::scanner::{Changes, DeviceDetails, DeviceTable, ScanSetup};
 use blenima_core::server::{Place, ServerEvent, Service};
 use serde::Serialize;
-use tauri::State;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 
 /// How often a scanner tab gets the rows that changed.
 const BATCH: Duration = Duration::from_millis(250);
@@ -39,6 +40,7 @@ pub struct Bluetooth {
     devices: Mutex<HashMap<u32, DeviceSession>>,
     adverts: Mutex<HashMap<u32, Advertising>>,
     servers: Mutex<HashMap<u32, Arc<Serving>>>,
+    meshes: Mutex<HashMap<u32, MeshSession>>,
     next: AtomicU32,
 }
 
@@ -239,6 +241,51 @@ pub fn device_command(id: u32, command: Command, bluetooth: State<'_, Bluetooth>
 #[tauri::command]
 pub async fn device_close(id: u32, bluetooth: State<'_, Bluetooth>) -> Result<(), String> {
     let session = lock(&bluetooth.devices).remove(&id);
+    if let Some(session) = session {
+        session.close().await;
+    }
+    Ok(())
+}
+
+/// Opens the Mesh tab's session on the network kept in `mesh.toml` in the
+/// config folder, a new one when there is none. Returns its id.
+#[tauri::command]
+pub async fn mesh_open(
+    events: Channel<MeshEvent>,
+    app: AppHandle,
+    bluetooth: State<'_, Bluetooth>,
+) -> Result<u32, String> {
+    let radio = bluetooth.radio().await?;
+    let file = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("mesh.toml");
+    let (sink, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let session = MeshSession::open(radio, file, sink);
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = receiver.recv().await {
+            if events.send(event).is_err() {
+                break;
+            }
+        }
+    });
+    let id = bluetooth.id();
+    lock(&bluetooth.meshes).insert(id, session);
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn mesh_command(id: u32, command: MeshCommand, bluetooth: State<'_, Bluetooth>) {
+    if let Some(session) = lock(&bluetooth.meshes).get(&id) {
+        session.send(command);
+    }
+}
+
+/// Ends the Mesh tab's session, and disconnects from its devices.
+#[tauri::command]
+pub async fn mesh_close(id: u32, bluetooth: State<'_, Bluetooth>) -> Result<(), String> {
+    let session = lock(&bluetooth.meshes).remove(&id);
     if let Some(session) = session {
         session.close().await;
     }

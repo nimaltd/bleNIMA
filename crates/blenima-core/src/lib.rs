@@ -6,6 +6,7 @@
 pub mod advert;
 pub mod device;
 pub mod gatt;
+pub mod mesh;
 pub mod names;
 pub mod radio;
 pub mod scanner;

@@ -72,9 +72,10 @@ one by one, and an HCI console.
 
 ## The main window
 
-terNIMA's window, with Bluetooth tabs. File > New tab and the + button open a Scanner,
-while none is open, or a new Device simulator; device and terminal tabs open from the
-scanner. With no tab open, the welcome page shows, with the roadmap.
+terNIMA's window, with Bluetooth tabs. File > New tab and the + button open a Scanner
+or the Mesh network tab, while none is open, or a new Device simulator; device and
+terminal tabs open from the scanner. With no tab open, the welcome page shows, as
+libNIMA's: the logo, the version, where to read more, and a button for the scanner.
 
 ```
 +-------------------------------------------------------------------------+
@@ -198,18 +199,36 @@ bleNIMA as a device, to test a phone app or a central's firmware:
 
 ## Mesh over GATT proxy (Phase 8)
 
-- Provisioning over PB-GATT, configuration (composition data, keys, binding, publish and
-  subscribe) and the common model clients, through a proxy node, with our own mesh
-  stack and its crypto checked against the Mesh spec's sample data
+The Mesh network tab, one at most: bleNIMA as a provisioner and a configuration client,
+with its own mesh stack in Rust (`blenima-core/src/mesh`), through the computer's own
+Bluetooth as everything else.
+
+- **Provisioning** over PB-GATT, of the devices that advertise the Mesh Provisioning
+  Service: both algorithms (BTM_ECDH_P256_CMAC_AES128_AES_CCM and
+  BTM_ECDH_P256_HMAC_SHA256_AES_CCM), and No OOB, Static, Output and Input OOB
+- **The proxy:** bleNIMA connects by itself to a proxy of the network, known by its
+  Network ID or a node's identity in its advert, learns the IV index from its beacon,
+  and asks for what is addressed to it with an accept list
+- **Configuration**, with each node's device key: composition data, application keys,
+  binding, publication, subscription, and node reset
+- **Model clients**, with an application key: Generic OnOff and Level, Light Lightness,
+  CTL and HSL, Sensor, Health, and any message by its opcode, to a node's element or a
+  group
+- **The stack:** network PDUs, segmentation and reassembly with acknowledgements, replay
+  protection, and the upper transport's encryption with application and device keys
+- **The network** is kept in `mesh.toml`: its keys, its IV index, bleNIMA's address and
+  sequence number, written ahead of use, and each node with its device key
+- The crypto, the PDUs, provisioning and the proxy's adverts are checked against the
+  Mesh Protocol spec's sample data (section 8)
 
 ---
 
 ## Saving and restoring
 
 As terNIMA: `settings.toml` (preferences) and `workspace.toml` (the tabs, each device,
-view, scanner filters and favourites, terminal settings, value formats, each Peripheral
+view, scanner filters and favourites, terminal settings, value formats, each device
 simulator's GATT server, the window's place and size), saved on every change through a
-temporary file.
+temporary file. The Mesh tab's network is in `mesh.toml`, beside them.
 
 | OS | Folder |
 |---|---|
@@ -275,10 +294,12 @@ TypeScript modules with no imports, tested by Node as they are.
 
 - Unit tests in `blenima-core`: advert decoding, beacons, names, the device table and its
   interval estimate, CSV, presentation formats, errors in words, settings and workspace,
-  and the GATT server's checks, long reads and writes, and clients' addresses
+  and the GATT server's checks, long reads and writes, and clients' addresses; the
+  mesh's crypto, PDUs, provisioning and stack against the Mesh Protocol spec's sample
+  data
 - Node tests of the UI's modules: value formats, profile decoders, SMP (CBOR, headers,
   reassembly, the MCUboot header, chunk sizes), the send-and-expect script, statistics,
-  and the GATT server's presets and live values
+  the GATT server's presets and live values, and the mesh messages
 - On real hardware: `cargo run -p blenima-core --example scan`, `connect <address>`,
   `bonds`, `advertise` and `serve`. Tried on Windows 11 with a Qualcomm QCA61x4: scanning
   with raw adverts; connecting to a device and reading its GATT table, MTU 247 and
@@ -294,7 +315,9 @@ TypeScript modules with no imports, tested by Node as they are.
 
 - **The OS decides.** Each OS hides different things; the UI says what and why
 - **macOS and BlueZ** are written for but not yet tried on real machines
-- **MCUmgr upload** is tested against encoded frames, not yet against a real device
+- **MCUmgr upload** is tested against encoded frames, and was tried on a real board in
+  November 2026
+- **Mesh** is tested against the spec's sample data, not yet with a real mesh node
 - **The Bluetooth name and logo** belong to the Bluetooth SIG. The app's icon is drawn
   after the Bluetooth rune: check the SIG's rules for its marks before the first public
   release, and redraw it if they ask
@@ -310,8 +333,8 @@ TypeScript modules with no imports, tested by Node as they are.
 - [x] terNIMA's window, menus, tabs, status bar, command palette, themes and fonts
 - [x] A welcome page with the roadmap
 - [x] `settings.toml` and `workspace.toml`, saved on every change
-- [ ] CI on Windows, Linux and macOS, and the release workflow (written; not run on
-  GitHub yet)
+- [x] CI on Windows, Linux and macOS, and the release workflow, run on GitHub for each
+  release since 0.1.0
 - [x] The name checked: nothing called bleNIMA on crates.io, npm or the AUR, and no
   app by that name (November 2026)
 
@@ -356,7 +379,7 @@ TypeScript modules with no imports, tested by Node as they are.
 - [x] Image slots, upload, test, confirm, reset, echo
 - [x] Its own view; erase, slot sizes, image number, only a newer version, the
   device's buffer, and the update in one go
-- [ ] Tried on a real board
+- [x] Tried on a real board (November 2026)
 
 ### Phase 6: pairing and bonds
 
@@ -375,8 +398,9 @@ TypeScript modules with no imports, tested by Node as they are.
 
 ### Phase 8: Mesh over GATT proxy
 
-- [ ] Provisioning over PB-GATT
-- [ ] Configuration and model clients
+- [x] Provisioning over PB-GATT, with both algorithms and all four OOB methods
+- [x] Configuration and model clients, through a proxy
+- [ ] Tried with a real mesh node
 
 ### Phase 9: 1.0
 

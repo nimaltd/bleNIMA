@@ -25,7 +25,8 @@ export type LogLine = {
   n: number;
   /** The time of day it happened: "14:02:11.204". */
   time: string;
-  kind: Source | "error" | "mark" | "state" | "subscribed";
+  /** "sent", "received" and "acked" are the Mesh tab's messages. */
+  kind: Source | "error" | "mark" | "state" | "subscribed" | "sent" | "received" | "acked";
   key: string | null;
   /** The characteristic's name, or what the line is about. */
   name: string;

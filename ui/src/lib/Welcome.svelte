@@ -1,184 +1,178 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import icon from "../../../src-tauri/icons/icon.svg";
+  import { radioInfo, type RadioInfo } from "./bluetooth";
+  import { logo } from "./logo";
   import { NEW_TABS } from "./new-tab";
-  import { CURRENT_PHASE, PHASES, PLAN } from "./roadmap";
+  import { GITHUB, HELP } from "./roadmap";
   import { shortcutLabel } from "./shortcuts";
 
-  /** Opens a new scanner tab. */
-  let { onscan }: { onscan: () => void } = $props();
+  // The page with no tab open, as libNIMA's and terNIMA's: the logo, what
+  // bleNIMA is, where to read more, and how to start.
+  let {
+    version,
+    onscan,
+  }: {
+    version: string;
+    /** Opens the scanner. */
+    onscan: () => void;
+  } = $props();
 
   const scanner = NEW_TABS[0];
+  const drawn = logo();
+
+  let radio: RadioInfo | null = $state(null);
+  let radioProblem = $state("");
+  onMount(() => {
+    radioInfo()
+      .then((info) => (radio = info))
+      .catch((error) => (radioProblem = String(error)));
+  });
 </script>
 
 <div class="welcome">
-  <div class="head">
-    <img src={icon} alt="" width="72" height="72" />
-    <h1>ble<span class="nima">NIMA</span></h1>
-    <p class="tagline">A Bluetooth LE tester for embedded developers, the same on Windows, macOS and Linux.</p>
-    <div class="buttons">
-      <button class="btn primary" onclick={onscan}>
-        New scanner
-        {#if scanner.shortcut}<span class="key">{shortcutLabel(scanner.shortcut)}</span>{/if}
-      </button>
-      <button class="btn" onclick={() => openUrl(PLAN)}>The plan</button>
-    </div>
+  <svg
+    class="logo"
+    width={drawn.width}
+    height={drawn.height}
+    viewBox="0 0 {drawn.width} {drawn.height}"
+    role="img"
+    aria-label="bleNIMA"
+  >
+    <path class="ble-shadow" d={drawn.bleShadow} />
+    <path class="ble-face" d={drawn.bleFace} />
+    <path class="nima-shadow" d={drawn.nimaShadow} />
+    <path class="nima-face" d={drawn.nimaFace} />
+  </svg>
+
+  <div class="lines">
+    <p><span class="version">v{version}</span>&nbsp; a Bluetooth LE tester for embedded developers</p>
+    <p><button class="link" onclick={() => void openUrl(GITHUB)}>{GITHUB}</button></p>
+    <p><span class="dim">Help:</span> <button class="link" onclick={() => void openUrl(HELP)}>{HELP}</button></p>
   </div>
 
-  <section class="roadmap" aria-labelledby="roadmap-title">
-    <h2 id="roadmap-title" class="dlg-section">Roadmap</h2>
-    <ol>
-      {#each PHASES as phase (phase.number)}
-        <li class:done={phase.number < CURRENT_PHASE} class:now={phase.number === CURRENT_PHASE}>
-          <span class="number">{phase.number}</span>
-          <span class="name">{phase.name}</span>
-          {#if phase.number === CURRENT_PHASE}
-            <span class="badge">now</span>
-          {/if}
-        </li>
-      {/each}
-    </ol>
-  </section>
+  <div class="table">
+    <span class="label">Radio</span>
+    <span class:dim={!radio} class:problem={radioProblem !== ""}>{radioProblem || radio?.name || "..."}</span>
+    <span class="label">New tab</span>
+    <span>{NEW_TABS.map((entry) => entry.label).join(", ")}</span>
+    <span class="label">Devices</span>
+    <span>from the scanner: Connect, Terminal, or a double-click</span>
+  </div>
+
+  <div class="lines">
+    <p class="dim">Open the scanner with this button, or File &gt; New tab.</p>
+    <p class="dim">The computer's own Bluetooth does it all: there is no dongle to buy.</p>
+  </div>
+
+  <button class="btn primary open" onclick={onscan}>
+    New scanner
+    {#if scanner.shortcut}<span class="key">{shortcutLabel(scanner.shortcut)}</span>{/if}
+  </button>
 </div>
 
 <style>
+  /* The same colors as the logo in terNIMA's welcome text and libNIMA's welcome page. */
   .welcome {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 28px;
+    --logo-teal: #2dd4bf;
+    --logo-teal-shadow: #135950;
+    --logo-orange: #fb923c;
+    --logo-orange-shadow: #693d19;
+
     height: 100%;
-    padding: 48px 24px 24px;
-    overflow-y: auto;
-    font-size: var(--view-size);
+    padding: 18px 2ch;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-variant-ligatures: none;
+    line-height: 18px;
     box-sizing: border-box;
   }
 
-  .head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
+  :global(:root[data-theme="light"]) .welcome {
+    --logo-teal: #0d9488;
+    --logo-teal-shadow: #99f6e4;
+    --logo-orange: #ea580c;
+    --logo-orange-shadow: #fed7aa;
   }
 
-  /* "ble" in teal and "NIMA" in orange, as the icon's two colors. */
-  h1 {
-    margin: 10px 0 4px;
-    font-size: 36px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+  .logo {
+    display: block;
+    shape-rendering: crispEdges;
+  }
+
+  .ble-face {
+    fill: var(--logo-teal);
+  }
+
+  .ble-shadow {
+    fill: var(--logo-teal-shadow);
+  }
+
+  .nima-face {
+    fill: var(--logo-orange);
+  }
+
+  .nima-shadow {
+    fill: none;
+    stroke: var(--logo-orange-shadow);
+    stroke-width: 1;
+  }
+
+  .lines {
+    margin-top: 18px;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  .version {
     color: var(--accent);
   }
 
-  /* The same orange as NIMA in terNIMA's logo. */
-  .nima {
-    color: #fb923c;
-  }
-
-  :global([data-theme="light"]) .nima {
-    color: #ea580c;
-  }
-
-  .tagline {
-    max-width: 460px;
-    margin: 0;
-    line-height: 1.5;
+  .dim,
+  .link {
     color: var(--muted);
   }
 
-  .buttons {
-    display: flex;
-    gap: 8px;
-    margin-top: 20px;
+  .problem {
+    color: var(--bad);
   }
 
-  .key {
-    font-size: 12px;
-    opacity: 0.75;
-  }
-
-  .roadmap {
-    width: min(560px, 100%);
-  }
-
-  .roadmap h2 {
-    margin-top: 0;
-  }
-
-  ol {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-flow: column;
-    grid-template-rows: repeat(5, auto);
-    gap: 2px 16px;
-    margin: 0;
+  .link {
     padding: 0;
-    list-style: none;
+    font: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
   }
 
-  li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 30px;
-    padding: 0 8px;
-    color: var(--muted);
-    border-radius: 6px;
+  .link:hover {
+    color: var(--accent);
+    text-decoration: underline;
   }
 
-  li.now {
-    color: var(--text);
-    background: var(--accent-soft);
-  }
-
-  li.done {
-    color: var(--text);
-  }
-
-  .number {
+  .table {
     display: grid;
-    flex-shrink: 0;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    border: 1.5px solid var(--border);
-    border-radius: 50%;
+    grid-template-columns: 14ch minmax(0, 1fr);
+    margin-top: 18px;
+    white-space: pre-wrap;
   }
 
-  li.now .number {
-    color: var(--on-accent);
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-
-  li.done .number {
-    color: var(--ok);
-    border-color: var(--ok);
-  }
-
-  .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .label {
+    color: var(--muted);
     white-space: nowrap;
   }
 
-  .badge {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  .open {
+    margin-top: 18px;
+    font-family: var(--font-ui);
+    font-size: 13px;
   }
 
-  @media (max-width: 560px) {
-    ol {
-      grid-template-columns: minmax(0, 1fr);
-      grid-auto-flow: row;
-      grid-template-rows: none;
-    }
+  .key {
+    margin-left: 8px;
+    opacity: 0.7;
   }
 </style>

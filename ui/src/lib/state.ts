@@ -14,6 +14,10 @@ export function look(tab: Tab): Look {
     if (tab.server.running) return "connected";
     return tab.server.problem ? "problem" : "stopped";
   }
+  if (tab.mesh) {
+    if (!tab.mesh.open) return tab.mesh.problem ? "problem" : "stopped";
+    return tab.mesh.connected ? "connected" : "waiting";
+  }
   if (tab.device) {
     switch (tab.device.state) {
       case "connected":
@@ -36,5 +40,6 @@ export function stateText(tab: Tab): string {
   }
   if (tab.device) return tab.device.stateText;
   if (tab.server) return tab.server.stateText;
+  if (tab.mesh) return tab.mesh.stateText;
   return "";
 }

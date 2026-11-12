@@ -9,6 +9,7 @@
   import SimulatorView from "./lib/SimulatorView.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import MenuBar from "./lib/MenuBar.svelte";
+  import MeshView from "./lib/MeshView.svelte";
   import SettingsDialog from "./lib/SettingsDialog.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
   import TabBar from "./lib/TabBar.svelte";
@@ -135,7 +136,7 @@
   <main class="pane" style:--view-size={`${unzoomed(settings.font_size)}px`}>
     {#if ready}
       {#if tabs.length === 0}
-        <Welcome onscan={() => newTab("scanner")} />
+        <Welcome version={info?.version ?? ""} onscan={() => newTab("scanner")} />
       {/if}
       <!-- Every tab stays, hidden behind the one in front, so a terminal keeps what it showed. -->
       {#each tabs as tab, i (tab.id)}
@@ -146,6 +147,8 @@
             <DeviceView {tab} active={i === view.active} />
           {:else if tab.server}
             <SimulatorView {tab} />
+          {:else if tab.mesh}
+            <MeshView {tab} />
           {/if}
         </div>
       {/each}

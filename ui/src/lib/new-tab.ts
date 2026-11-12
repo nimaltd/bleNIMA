@@ -1,6 +1,6 @@
 // The kinds of tab that File > New tab and the + button open: one list, so
-// both offer the same, in the same words and order. There is one scanner at
-// most, and device and terminal tabs open from it.
+// both offer the same, in the same words and order. There is one scanner and
+// one Mesh tab at most, and device and terminal tabs open from the scanner.
 
 import { keys } from "./shortcuts";
 
@@ -18,7 +18,7 @@ export type TabKind =
   | "hci_console";
 
 export type NewTab = {
-  kind: "scanner" | "simulator";
+  kind: "scanner" | "simulator" | "mesh";
   label: string;
   /** What it is for, under the label in the + menu. */
   detail: string;
@@ -31,6 +31,9 @@ export const SCANNER_NAME = "Scanner";
 /** The name a new device simulator tab gets, with a number after it when it is taken. */
 export const SIMULATOR_NAME = "Device simulator";
 
+/** The name of the Mesh tab: there is one at most, as there is one network. */
+export const MESH_NAME = "Mesh network";
+
 export const NEW_TABS: NewTab[] = [
   {
     kind: "scanner",
@@ -42,5 +45,10 @@ export const NEW_TABS: NewTab[] = [
     kind: "simulator",
     label: SIMULATOR_NAME,
     detail: "bleNIMA as a device: an advertiser and a GATT server",
+  },
+  {
+    kind: "mesh",
+    label: MESH_NAME,
+    detail: "Provision devices, and configure and talk to them through a proxy",
   },
 ];

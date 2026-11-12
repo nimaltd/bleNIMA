@@ -130,13 +130,19 @@
     color: var(--warn);
   }
 
-  .line.notify .kind {
+  .line.notify .kind,
+  .line.received .kind {
     color: var(--accent);
   }
 
   .line.write .kind,
-  .line.write_without_response .kind {
+  .line.write_without_response .kind,
+  .line.sent .kind {
     color: var(--accent-2);
+  }
+
+  .line.acked .kind {
+    color: var(--ok);
   }
 
   .empty {

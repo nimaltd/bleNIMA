@@ -2,9 +2,9 @@
 // already, greyed out with their phase, so the menus show where the app is going.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { NEW_TABS, SIMULATOR_NAME, type NewTab } from "./new-tab";
+import { MESH_NAME, NEW_TABS, SIMULATOR_NAME, type NewTab } from "./new-tab";
 import type { Command } from "./palette";
-import { GITHUB, PLAN } from "./roadmap";
+import { GITHUB, HELP, PLAN } from "./roadmap";
 import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_MAX,
@@ -17,7 +17,7 @@ import {
   type ThemeChoice,
 } from "./settings.svelte";
 import { isMac, keys, matches } from "./shortcuts";
-import { activeTab, closeTab, hasScanner, showTab, tabs, view } from "./tabs.svelte";
+import { activeTab, canOpen, closeTab, showTab, tabs, view } from "./tabs.svelte";
 
 export type Item = {
   label: string;
@@ -88,8 +88,8 @@ export function buildMenus(app: AppActions): Menu[] {
         ...NEW_TABS.map(({ kind, label, shortcut }) => ({
           label,
           shortcut,
-          // There is one scanner at most.
-          enabled: () => kind !== "scanner" || !hasScanner(),
+          // There is one scanner and one Mesh tab at most.
+          enabled: () => canOpen(kind),
           run: () => app.newTab(kind),
         })),
         null,
@@ -253,13 +253,13 @@ export function buildMenus(app: AppActions): Menu[] {
         },
         null,
         { label: SIMULATOR_NAME, run: () => app.newTab("simulator") },
-        { label: "Mesh", phase: 8 },
+        { label: MESH_NAME, run: () => app.newTab("mesh") },
       ],
     },
     {
       title: "Help",
       items: [
-        { label: "bleNIMA help", phase: 9 },
+        { label: "bleNIMA help", run: () => void openUrl(HELP) },
         { label: "The plan", run: () => void openUrl(PLAN) },
         { label: "bleNIMA on GitHub", run: () => void openUrl(GITHUB) },
         { label: "Report a bug...", run: () => void openUrl(`${GITHUB}/issues/new`) },

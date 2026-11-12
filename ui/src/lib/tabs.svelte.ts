@@ -2,7 +2,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { DeviceState } from "./device.svelte";
-import { SCANNER_NAME, SIMULATOR_NAME, type NewTab, type TabKind } from "./new-tab";
+import { MeshState } from "./mesh.svelte";
+import { MESH_NAME, SCANNER_NAME, SIMULATOR_NAME, type NewTab, type TabKind } from "./new-tab";
 import { reopened } from "./reopen";
 import { ScannerState, type ScanFilter } from "./scanner.svelte";
 import type { ScanSetup } from "./bluetooth";
@@ -52,6 +53,9 @@ export type DeviceView = "gatt" | "terminal" | "log" | "tools" | "mcumgr";
 /** The views a device simulator tab has, when its parts are shown one at a time. */
 export type SimulatorView = "advertiser" | "server" | "log";
 
+/** The views the Mesh tab has. */
+export type MeshView = "network" | "log";
+
 export class Tab {
   /** Tells tabs apart while they are open, even with the same name. */
   readonly id = nextId++;
@@ -61,6 +65,7 @@ export class Tab {
   readonly scanner: ScannerState | null = null;
   readonly device: DeviceState | null = null;
   readonly server: ServerState | null = null;
+  readonly mesh: MeshState | null = null;
   terminal: TerminalSetup = $state({ write: "", notify: "", enter: "cr", local_echo: false });
 
   constructor(setup: TabSetup) {
@@ -79,14 +84,19 @@ export class Tab {
       this.server = new ServerState(setup.server?.services ?? []);
       this.view ||= "server";
     }
+    if (setup.kind === "mesh") {
+      this.mesh = new MeshState();
+      this.view ||= "network";
+    }
     if (setup.terminal) this.terminal = { ...setup.terminal };
   }
 
-  /** Scanning, connected or trying to be, or serving. */
+  /** Scanning, connected or trying to be, serving, or with its network open. */
   get connected(): boolean {
     if (this.scanner) return this.scanner.running;
     if (this.device) return this.device.open;
     if (this.server) return this.server.running;
+    if (this.mesh) return this.mesh.open;
     return false;
   }
 
@@ -96,6 +106,7 @@ export class Tab {
     void this.device?.connect();
     // Saved again once it serves, so it serves again next time.
     void this.server?.start().then(changed);
+    void this.mesh?.start().then(changed);
     changed();
   }
 
@@ -103,6 +114,7 @@ export class Tab {
     void this.scanner?.stop();
     void this.device?.disconnect();
     void this.server?.stop();
+    void this.mesh?.stop();
     changed();
   }
 
@@ -152,12 +164,14 @@ export async function loadWorkspace(): Promise<void> {
   for (const at of reopened(saved)) {
     const setup = saved[at];
     const tab = new Tab(setup);
-    // There is one scanner at most, so it has the one name.
+    // There is one scanner and one Mesh tab at most, so each has the one name.
     if (tab.scanner) tab.name = SCANNER_NAME;
+    if (tab.mesh) tab.name = MESH_NAME;
     if (at === workspace.active) active = tab;
     tabs.push(tab);
     // A scanner scans if it was scanning, a device tab connects if it was connected, and one device simulator serves again.
     if (tab.scanner && setup.connected) void tab.scanner.start();
+    if (tab.mesh && setup.connected && settings.startup.reconnect) void tab.mesh.start();
     if (tab.device && setup.connected && settings.startup.reconnect) void tab.device.connect();
     if (tab.server && setup.connected && settings.startup.reconnect && !serving) {
       serving = true;
@@ -174,21 +188,34 @@ export function hasScanner(): boolean {
   return tabs.some((tab) => tab.scanner !== null);
 }
 
+/** Whether the Mesh tab is open: there is one at most. */
+export function hasMesh(): boolean {
+  return tabs.some((tab) => tab.mesh !== null);
+}
+
+/** Whether a tab of this kind can be opened: there is one scanner and one Mesh tab at most. */
+export function canOpen(kind: NewTab["kind"]): boolean {
+  if (kind === "scanner") return !hasScanner();
+  if (kind === "mesh") return !hasMesh();
+  return true;
+}
+
 /**
- * Opens a new scanner or device simulator tab, and brings it in front. A
- * scanner starts scanning; when one is open already, it is brought in front.
+ * Opens a new scanner, device simulator or Mesh tab, and brings it in
+ * front. A scanner starts scanning, and the Mesh tab opens its network; when
+ * one is open already, it is brought in front.
  */
 export function newTab(kind: NewTab["kind"]): Tab {
-  const scanner = kind === "scanner" ? tabs.find((tab) => tab.scanner !== null) : undefined;
-  if (scanner) {
-    showTab(tabs.indexOf(scanner));
-    return scanner;
+  const open = tabs.find((tab) => (kind === "scanner" && tab.scanner) || (kind === "mesh" && tab.mesh));
+  if (open) {
+    showTab(tabs.indexOf(open));
+    return open;
   }
-  const name = kind === "scanner" ? SCANNER_NAME : freeName(SIMULATOR_NAME);
+  const name = kind === "scanner" ? SCANNER_NAME : kind === "mesh" ? MESH_NAME : freeName(SIMULATOR_NAME);
   const tab = new Tab({ name, kind, connected: false });
   tabs.push(tab);
   showTab(tabs.length - 1);
-  if (tab.scanner) tab.start();
+  if (tab.scanner || tab.mesh) tab.start();
   return tab;
 }
 
@@ -219,6 +246,7 @@ export function closeTab(tab: Tab): void {
   void tab.scanner?.close();
   void tab.device?.disconnect();
   void tab.server?.stop();
+  void tab.mesh?.stop();
   tabs.splice(index, 1);
   const after = index < view.active ? view.active - 1 : view.active;
   view.active = Math.min(after, Math.max(0, tabs.length - 1));
