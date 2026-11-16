@@ -52,10 +52,10 @@ export const FONT_SIZE_MIN = 9;
 export const FONT_SIZE_MAX = 24;
 export const FONT_SIZE_DEFAULT = 13;
 
-/** Menu text size limits, the same as in settings.rs. */
+/** Menu text size limits, the same as in settings.rs. The default, which Normal menu text size gives, zooms nothing. */
 export const MENU_FONT_SIZE_MIN = 10;
 export const MENU_FONT_SIZE_MAX = 26;
-export const MENU_FONT_SIZE_DEFAULT = 16;
+export const MENU_FONT_SIZE_DEFAULT = 13;
 /** The menu text size app.css and the components are written for; above it, the Rust side zooms the window. */
 const MENU_FONT_SIZE_DRAWN = 13;
 
