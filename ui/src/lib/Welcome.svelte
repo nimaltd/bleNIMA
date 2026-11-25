@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import Donate from "./Donate.svelte";
   import { radioInfo, type RadioInfo } from "./bluetooth";
   import { logo } from "./logo";
   import { NEW_TABS } from "./new-tab";
@@ -31,6 +32,10 @@
 </script>
 
 <div class="welcome">
+  <div class="donate">
+    <Donate app="bleNIMA" />
+  </div>
+
   <svg
     class="logo"
     width={drawn.width}
@@ -99,6 +104,12 @@
   .logo {
     display: block;
     shape-rendering: crispEdges;
+  }
+
+  /* At the right, beside the rest, which flows around it. */
+  .donate {
+    float: right;
+    margin: 0 0 12px 3ch;
   }
 
   .ble-face {

@@ -5,6 +5,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- The welcome page has a Donate card at the right: PayPal and Ko-fi, each
+  with a QR code for a phone and a link that opens in the browser.
+
 ## [1.0.1] - 2026-11-16
 
 ### Changed
