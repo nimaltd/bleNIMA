@@ -5,6 +5,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- The Welcome tab stays first in the tab bar while tabs are open, and a click
+  brings it to the front again. It has no close button.
+
 ## [1.0.2] - 2026-11-25
 
 ### Added

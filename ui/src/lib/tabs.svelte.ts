@@ -145,14 +145,21 @@ export class Tab {
 export const tabs: Tab[] = $state([]);
 
 /** What is on screen: `active` is the tab in front, with the keyboard. */
-export const view: { active: number } = $state({ active: 0 });
+export const view: { active: number; welcome: boolean } = $state({ active: 0, welcome: false });
 
 let loaded = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** The tab in front, or none while the Welcome tab is. */
 export function activeTab(): Tab | undefined {
-  return tabs[view.active];
+  return view.welcome ? undefined : tabs[view.active];
 }
+
+/** Shows the Welcome tab, which stays first in the bar however many tabs there are. */
+export function showWelcome(): void {
+  view.welcome = true;
+}
+
 
 /** Opens the tabs saved last time, if the Startup settings say so. The settings must be loaded first. */
 export async function loadWorkspace(): Promise<void> {
@@ -258,6 +265,7 @@ export function showTab(index: number): void {
   if (tabs.length === 0) {
     return;
   }
+  view.welcome = false;
   view.active = (index + tabs.length) % tabs.length;
   changed();
 }

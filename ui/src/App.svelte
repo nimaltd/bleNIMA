@@ -135,16 +135,16 @@
 
   <main class="pane" style:--view-size={`${unzoomed(settings.font_size)}px`}>
     {#if ready}
-      {#if tabs.length === 0}
+      {#if tabs.length === 0 || view.welcome}
         <Welcome version={info?.version ?? ""} onscan={() => newTab("scanner")} />
       {/if}
       <!-- Every tab stays, hidden behind the one in front, so a terminal keeps what it showed. -->
       {#each tabs as tab, i (tab.id)}
-        <div class="slot" class:hidden={i !== view.active}>
+        <div class="slot" class:hidden={i !== view.active || view.welcome}>
           {#if tab.scanner}
             <ScannerView {tab} />
           {:else if tab.device}
-            <DeviceView {tab} active={i === view.active} />
+            <DeviceView {tab} active={i === view.active && !view.welcome} />
           {:else if tab.server}
             <SimulatorView {tab} />
           {:else if tab.mesh}

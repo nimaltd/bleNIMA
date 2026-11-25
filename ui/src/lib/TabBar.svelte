@@ -1,7 +1,7 @@
 <script lang="ts">
   import { NEW_TABS, type NewTab } from "./new-tab";
   import { look, stateText } from "./state";
-  import { canOpen, closeTab, showTab, tabs, view } from "./tabs.svelte";
+  import { canOpen, closeTab, showTab, showWelcome, tabs, view } from "./tabs.svelte";
 
   /** Opens a new scanner or device simulator tab. */
   let { onnew }: { onnew: (kind: NewTab["kind"]) => void } = $props();
@@ -42,20 +42,26 @@
 
 <div class="bar" bind:this={bar}>
   <header class="tabs" role="tablist">
-    {#if tabs.length === 0}
-      <div class="tab active" role="tab" aria-selected="true">
-        <span class="dot stopped"></span>
-        Welcome
-      </div>
-    {/if}
+    <!-- Always first, and never closed: the page each app opens on. -->
+    <div
+      class="tab"
+      class:active={tabs.length === 0 || view.welcome}
+      role="tab"
+      tabindex="-1"
+      aria-selected={tabs.length === 0 || view.welcome}
+      onmousedown={showWelcome}
+    >
+      <span class="dot stopped"></span>
+      Welcome
+    </div>
 
     {#each tabs as tab, i (tab.id)}
       <div
         class="tab"
-        class:active={i === view.active}
+        class:active={i === view.active && !view.welcome}
         role="tab"
         tabindex="-1"
-        aria-selected={i === view.active}
+        aria-selected={i === view.active && !view.welcome}
         title={`${tab.name}: ${stateText(tab)}`}
         onmousedown={() => showTab(i)}
       >
