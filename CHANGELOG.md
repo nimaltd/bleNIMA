@@ -5,6 +5,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-25
+
 ### Changed
 
 - The Welcome tab stays first in the tab bar while tabs are open, and a click
@@ -217,7 +219,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   dongle, nor what only a dongle could do: the sniffer, direction finding,
   Channel Sounding and LE Audio streams.
 
-[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.3
 [1.0.2]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.2
 [1.0.1]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.1
 [1.0.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.0
