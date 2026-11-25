@@ -5,6 +5,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-25
+
 ### Added
 
 - The welcome page has a Donate card at the right: PayPal and Ko-fi, each
@@ -210,7 +212,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   dongle, nor what only a dongle could do: the sniffer, direction finding,
   Channel Sounding and LE Audio streams.
 
-[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/nimaltd/bleNIMA/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.2
 [1.0.1]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.1
 [1.0.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v1.0.0
 [0.3.0]: https://github.com/nimaltd/bleNIMA/releases/tag/v0.3.0
